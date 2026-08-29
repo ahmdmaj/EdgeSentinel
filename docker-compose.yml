@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: edgesentinel-mosquitto
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infrastructure/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - edgesentinel-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: edgesentinel-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    networks:
+      - edgesentinel-network
+    restart: unless-stopped
+
+  edge-service:
+    build:
+      context: ./services/edge
+    container_name: edgesentinel-edge
+    ports:
+      - "${EDGE_PORT:-8000}:8000"
+    environment:
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - DATABASE_URL=${DATABASE_URL}
+    networks:
+      - edgesentinel-network
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  cloud-api:
+    build:
+      context: ./apps/api
+    container_name: edgesentinel-api
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    networks:
+      - edgesentinel-network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: ./services/simulator
+    container_name: edgesentinel-simulator
+    environment:
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+    networks:
+      - edgesentinel-network
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+networks:
+  edgesentinel-network:
+    name: edgesentinel-network
+    driver: bridge
