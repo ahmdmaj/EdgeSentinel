@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+paho-mqtt
+scikit-learn
+sqlalchemy
