@@ -3,23 +3,30 @@ import time
 import json
 import random
 import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 TOPIC = "edgesentinel/devices/DEVICE-001/telemetry"
 DEVICE_ID = "DEVICE-001"
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("Connected to MQTT Broker!")
-    else:
-        print(f"Failed to connect, return code {rc}")
 
-client = mqtt.Client(client_id=f"simulator-{DEVICE_ID}")
+def on_connect(client, userdata, flags, reason_code, properties):
+    """Called when the broker accepts our connection (paho-mqtt v2 API)."""
+    if reason_code == 0:
+        print("Simulator connected to MQTT Broker!")
+    else:
+        print(f"Failed to connect, reason code: {reason_code}")
+
+
+# Use VERSION2 callback API to suppress all deprecation warnings
+client = mqtt.Client(
+    callback_api_version=CallbackAPIVersion.VERSION2,
+    client_id=f"simulator-{DEVICE_ID}"
+)
 client.on_connect = on_connect
 
-# Basic reconnection handling is done implicitly by paho-mqtt's loop_start/reconnect mechanisms,
-# but we ensure the initial connection doesn't crash permanently.
+# Retry loop for initial connection — paho's loop_start handles reconnections after that
 connected = False
 while not connected:
     try:
