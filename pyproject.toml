@@ -7,5 +7,6 @@ exclude = [
     ".venv",
     "node_modules",
     "**/dist/**",
-    "**/__pycache__/**"
+    "**/__pycache__/**",
+    "**/__pyrefly_virtual__/**"
 ]
