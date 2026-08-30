@@ -4,7 +4,7 @@ import json
 import random
 import paho.mqtt.client as mqtt
 
-MQTT_BROKER_URL = os.environ.get("MQTT_BROKER_URL", "localhost")
+MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 TOPIC = "edgesentinel/devices/DEVICE-001/telemetry"
 DEVICE_ID = "DEVICE-001"
@@ -23,7 +23,7 @@ client.on_connect = on_connect
 connected = False
 while not connected:
     try:
-        client.connect(MQTT_BROKER_URL, MQTT_PORT)
+        client.connect(MQTT_HOST, MQTT_PORT)
         connected = True
     except Exception as e:
         print(f"Connection failed: {e}. Retrying in 5 seconds...")

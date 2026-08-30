@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
 
-MQTT_BROKER_URL = os.environ.get("MQTT_BROKER_URL", "localhost")
+MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 TOPIC_WILDCARD = "edgesentinel/devices/+/telemetry"
 
@@ -44,7 +44,7 @@ def setup_mqtt():
     connected = False
     while not connected:
         try:
-            mqtt_client.connect(MQTT_BROKER_URL, MQTT_PORT)
+            mqtt_client.connect(MQTT_HOST, MQTT_PORT)
             connected = True
         except Exception as e:
             print(f"Edge MQTT connection failed: {e}. Retrying in 5 seconds...")
