@@ -2,7 +2,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 RUN corepack enable pnpm
 COPY package.json ./
-RUN pnpm install
+RUN pnpm config set ignore-scripts false && pnpm install
 COPY . .
 
 FROM node:22-alpine
