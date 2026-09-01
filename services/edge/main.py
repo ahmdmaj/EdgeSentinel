@@ -7,11 +7,13 @@ import json
 import time
 import asyncio
 import httpx
+import uuid
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import inference
+import storage
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -52,13 +54,19 @@ def on_message(client, userdata, msg):
         
         print(json.dumps(payload, indent=2), flush=True)
         
+        event_id = str(uuid.uuid4())
+        
         async def forward_telemetry():
             try:
-                async with httpx.AsyncClient() as http_client:
+                async with httpx.AsyncClient(timeout=5.0) as http_client:
                     response = await http_client.post("http://cloud-api:3000/api/v1/telemetry", json=payload)
                     response.raise_for_status()
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                print(f"Cloud unavailable - caching locally. Error: {e}", flush=True)
+                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
             except Exception as e:
                 print(f"Error forwarding telemetry to Cloud API: {e}", flush=True)
+                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
         
         if main_loop:
             asyncio.run_coroutine_threadsafe(forward_telemetry(), main_loop)
@@ -110,6 +118,7 @@ async def lifespan(app: FastAPI):
     global main_loop
     main_loop = asyncio.get_running_loop()
     # Startup
+    storage.Base.metadata.create_all(bind=storage.engine)
     setup_mqtt()
     yield
     # Shutdown
