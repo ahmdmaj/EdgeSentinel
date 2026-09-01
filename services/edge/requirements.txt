@@ -3,3 +3,4 @@ uvicorn
 paho-mqtt
 scikit-learn
 sqlalchemy
+httpx

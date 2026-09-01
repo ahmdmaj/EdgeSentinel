@@ -5,6 +5,8 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 import json
 import time
+import asyncio
+import httpx
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
@@ -15,6 +17,7 @@ MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 TOPIC_WILDCARD = "edgesentinel/devices/+/telemetry"
 
 mqtt_client = None
+main_loop = None
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -33,6 +36,18 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message on {msg.topic}:", flush=True)
         print(json.dumps(payload, indent=2), flush=True)
+        
+        async def forward_telemetry():
+            try:
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.post("http://cloud-api:3000/api/v1/telemetry", json=payload)
+                    response.raise_for_status()
+            except Exception as e:
+                print(f"Error forwarding telemetry to Cloud API: {e}", flush=True)
+        
+        if main_loop:
+            asyncio.run_coroutine_threadsafe(forward_telemetry(), main_loop)
+            
     except json.JSONDecodeError:
         print(f"Failed to parse JSON payload from {msg.topic}: {msg.payload}", flush=True)
     except Exception as e:
@@ -77,6 +92,8 @@ def teardown_mqtt():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     # Startup
     setup_mqtt()
     yield
