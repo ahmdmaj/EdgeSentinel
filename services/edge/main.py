@@ -14,6 +14,7 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import inference
 import storage
+import sync
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -55,6 +56,7 @@ def on_message(client, userdata, msg):
         print(json.dumps(payload, indent=2), flush=True)
         
         event_id = str(uuid.uuid4())
+        payload["eventId"] = event_id
         
         async def forward_telemetry():
             try:
@@ -113,15 +115,21 @@ def teardown_mqtt():
         print("MQTT client stopped.")
 
 
+sync_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global main_loop
+    global sync_task
     main_loop = asyncio.get_running_loop()
     # Startup
     storage.Base.metadata.create_all(bind=storage.engine)
     setup_mqtt()
+    sync_task = asyncio.create_task(sync.sync_worker())
     yield
     # Shutdown
+    if sync_task:
+        sync_task.cancel()
     teardown_mqtt()
 
 

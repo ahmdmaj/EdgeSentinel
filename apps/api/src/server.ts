@@ -4,6 +4,7 @@ import { z } from 'zod';
 const fastify = Fastify({ logger: true });
 
 const telemetrySchema = z.object({
+  eventId: z.string(),
   deviceId: z.string(),
   temperature: z.number(),
   humidity: z.number(),
@@ -15,6 +16,8 @@ const telemetrySchema = z.object({
   severity: z.enum(["NORMAL", "WARNING", "CRITICAL"])
 });
 
+const processedEvents = new Set<string>();
+
 fastify.get('/health', async (request, reply) => {
   return { status: 'healthy' };
 });
@@ -22,6 +25,19 @@ fastify.get('/health', async (request, reply) => {
 fastify.post('/api/v1/telemetry', async (request, reply) => {
   try {
     const data = telemetrySchema.parse(request.body);
+    
+    // Idempotency Check
+    if (processedEvents.has(data.eventId)) {
+      console.log(`Duplicate event ${data.eventId} ignored.`);
+      return reply.status(200).send({ message: "Already processed" });
+    }
+    
+    processedEvents.add(data.eventId);
+    // Basic limit to prevent memory leak
+    if (processedEvents.size > 10000) {
+      processedEvents.clear();
+    }
+
     console.log("Received valid telemetry from Edge:", data);
     return reply.status(201).send();
   } catch (error) {
