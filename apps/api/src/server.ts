@@ -10,7 +10,9 @@ const telemetrySchema = z.object({
   vibration: z.number(),
   pressure: z.number(),
   machineState: z.string(),
-  timestamp: z.string()
+  timestamp: z.string(),
+  anomalyScore: z.number(),
+  severity: z.enum(["NORMAL", "WARNING", "CRITICAL"])
 });
 
 fastify.get('/health', async (request, reply) => {

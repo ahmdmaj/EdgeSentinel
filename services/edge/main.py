@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+import inference
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -35,6 +36,20 @@ def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message on {msg.topic}:", flush=True)
+        
+        # Run ML Inference
+        score = inference.get_anomaly_score(
+            payload.get("temperature", 0.0),
+            payload.get("humidity", 0.0),
+            payload.get("vibration", 0.0),
+            payload.get("pressure", 0.0)
+        )
+        severity = inference.classify_severity(score)
+        
+        # Append ML results to payload
+        payload["anomalyScore"] = score
+        payload["severity"] = severity
+        
         print(json.dumps(payload, indent=2), flush=True)
         
         async def forward_telemetry():
