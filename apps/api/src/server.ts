@@ -41,7 +41,14 @@ fastify.post('/api/v1/telemetry', async (request, reply) => {
     console.log("Received valid telemetry from Edge:", data);
     return reply.status(201).send();
   } catch (error) {
-    fastify.log.error(error);
+    if (error instanceof z.ZodError) {
+      console.log("Zod Validation Failed!");
+      error.issues.forEach(issue => {
+        console.log(`- Field '${issue.path.join('.')}' error: ${issue.message}`);
+      });
+    } else {
+      fastify.log.error(error);
+    }
     return reply.status(400).send({ error: "Invalid telemetry data" });
   }
 });
