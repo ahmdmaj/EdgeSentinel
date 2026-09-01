@@ -28,7 +28,7 @@ fastify.post('/api/v1/telemetry', async (request, reply) => {
     
     // Idempotency Check
     if (processedEvents.has(data.eventId)) {
-      console.log(`Duplicate event ${data.eventId} ignored.`);
+      console.log("Duplicate event detected and ignored");
       return reply.status(200).send({ message: "Already processed" });
     }
     
