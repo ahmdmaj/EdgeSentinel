@@ -78,7 +78,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center space-x-2 bg-zinc-900 px-4 py-2 rounded-lg border border-zinc-800">
           <div className={`w-2.5 h-2.5 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : error ? 'bg-red-500' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse'}`} />
-          <span className="text-sm font-medium text-zinc-300">{loading ? 'Connecting...' : error ? 'Disconnected' : 'Live Data (3s)'}</span>
+          <span className="text-sm font-medium text-zinc-300">{loading ? 'Connecting...' : error ? 'Disconnected' : 'Live Stream (SSE)'}</span>
         </div>
       </header>
 
