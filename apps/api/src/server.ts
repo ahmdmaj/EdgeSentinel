@@ -13,7 +13,10 @@ const telemetrySchema = z.object({
   machineState: z.string(),
   timestamp: z.number(),
   anomalyScore: z.number(),
-  severity: z.enum(["NORMAL", "WARNING", "CRITICAL"])
+  severity: z.enum(["NORMAL", "WARNING", "CRITICAL"]),
+  processingDecision: z.string(),
+  edgeCpu: z.number(),
+  networkLatency: z.number()
 });
 
 const processedEvents = new Set<string>();
