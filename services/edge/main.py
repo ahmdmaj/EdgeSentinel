@@ -15,6 +15,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 import inference
 import storage
 import sync
+import decision_engine
+import random
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -52,6 +54,15 @@ def on_message(client, userdata, msg):
         # Append ML results to payload
         payload["anomalyScore"] = score
         payload["severity"] = severity
+        
+        # Simulate edge metrics and evaluate routing policy
+        edge_cpu = round(random.uniform(10.0, 90.0), 2)
+        network_latency = round(random.uniform(10.0, 300.0), 2)
+        decision = decision_engine.evaluate_routing_policy(severity, network_latency, edge_cpu)
+        
+        payload["edgeCpu"] = edge_cpu
+        payload["networkLatency"] = network_latency
+        payload["processingDecision"] = decision
         
         print(json.dumps(payload, indent=2), flush=True)
         
