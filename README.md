@@ -1,38 +1,77 @@
-# EdgeSentinel Monorepo Architecture
+# EdgeSentinel
 
-Welcome to the **EdgeSentinel** project! This platform is an "offline-first edge-cloud anomaly detection system." Because a system like this has many moving parts (cloud servers, local edge devices, databases, and IoT simulators), we are using a **Monorepo** structure. 
+**Resilient, Offline-First, Adaptive Edge-Cloud Anomaly Detection Platform**
 
-A monorepo means all the different parts of the system live in this single repository. Here is a breakdown of exactly why every folder and file exists in this project:
+EdgeSentinel is a distributed edge-cloud monitoring and anomaly detection platform designed to demonstrate how modern software systems can continue operating reliably when cloud connectivity is unreliable. 
 
----
-
-## 📂 `apps/`
-This folder holds our primary, cloud-hosted applications.
-* **`apps/api/` (Cloud API):** This is the central brain in the cloud. It's a Node.js (Fastify) server that receives aggregated data from all the remote edge nodes, stores it in the Postgres database, and serves it to the web dashboard.
-* **`apps/web/` (Frontend Dashboard):** *(Coming soon)* This will be our Next.js React application. It is the user interface where administrators will log in to view charts, anomalies, and monitor the health of all edge devices.
-
-## 📂 `services/`
-This folder holds our backend microservices and edge-deployed components.
-* **`services/edge/` (Edge Node):** This is the Python service designed to be deployed physically on-site (the "edge"). It listens to local machines, uses Machine Learning to detect anomalies immediately, and stores data locally if the internet goes down. 
-* **`services/simulator/` (IoT Simulator):** Since we don't have real factory machines plugged into our laptops, this Python script generates fake temperature/vibration data so we can test our software.
-
-## 📂 `infrastructure/`
-This folder contains the configuration for our 3rd-party tools and databases.
-* **`infrastructure/mosquitto/`:** Holds the configuration for our Eclipse Mosquitto MQTT Broker. MQTT is the lightweight messaging protocol our simulator uses to send data to the edge node.
-
-## 📂 `packages/`
-*(Empty for now)* This folder is for shared code. For example, if both the `apps/web` and `apps/api` need to use the exact same TypeScript types or utility functions, we put them here so we don't have to write the code twice.
-
-## 📂 `ml/`
-*(Empty for now)* A dedicated workspace for Data Scientists. This is where Jupyter Notebooks, training data, and experiments will live before the final Machine Learning models are exported to the `services/edge/` node.
-
-## 📂 `docs/`
-*(Empty for now)* Where detailed project documentation, API specs, and architecture diagrams will go.
+The platform simulates an industrial monitoring environment where virtual devices continuously generate sensor data. Instead of sending every sensor reading to the cloud for processing, EdgeSentinel introduces an intelligent edge layer that preprocesses data, performs local ML inference, and makes adaptive decisions about processing locations.
 
 ---
 
-## 📄 Root Files
-* **`docker-compose.yml`:** The orchestration file. When you run `docker compose up`, this file tells Docker how to boot up the API, the Edge Node, the Simulator, the Postgres database, and the Mosquitto broker, and how to connect them all together on a shared virtual network.
-* **`package.json`:** Since we are using an NPM Workspace, this file tells the package manager how to link `apps/` and `packages/` together.
-* **`.env` & `.env.example`:** Stores our secret passwords, database connection strings, and network ports. We use `.env.example` as a safe template to commit to version control, while `.env` stays hidden.
-* **`.gitignore`:** Tells Git which files (like heavy `node_modules/` or secret `.env` files) to ignore and NEVER upload to GitHub.
+## 🌟 Key Features
+
+*   **Adaptive Edge-Cloud Processing:** A decision engine determines whether to process data at the edge, in the cloud, or using a hybrid approach based on network availability, latency, event severity, and model confidence.
+*   **Offline-First Architecture:** The edge node can continue to operate and store important events locally (via SQLite) during network failures, automatically synchronizing with the cloud when connectivity is restored.
+*   **Distributed Anomaly Detection:** Local machine learning inference (Isolation Forest) at the edge for immediate detection of critical events, with centralized analytics in the cloud.
+*   **Monorepo Architecture:** The entire system—cloud frontend/backend, edge services, simulator, and ML models—is managed within a single repository for streamlined development and deployment.
+
+---
+
+## 🏗️ Architecture & Technology Stack
+
+The system is split into cloud and edge environments, communicating via MQTT and HTTP:
+
+### Cloud Environment
+*   **Web Dashboard (`apps/web`):** Next.js, React, TypeScript, Tailwind CSS
+*   **Cloud API (`apps/api`):** Node.js, Fastify, TypeScript, Prisma ORM
+*   **Database:** PostgreSQL (Neon)
+
+### Edge Environment
+*   **Edge Node (`services/edge`):** Python, FastAPI, scikit-learn, SQLite
+*   **IoT Simulator (`services/simulator`):** Python (Generates telemetry like temperature, vibration, etc.)
+*   **Messaging:** Eclipse Mosquitto (MQTT)
+
+### DevOps & Infrastructure
+*   **Containerization:** Docker & Docker Compose
+*   **CI/CD:** GitHub Actions
+*   **Observability:** Prometheus & Grafana
+
+---
+
+## 📂 Repository Structure
+
+Because this system has many moving parts, we use a **Monorepo** structure. Here is a breakdown of the project directories:
+
+### `apps/` (Cloud Hosted)
+*   **`apps/api/` (Cloud API):** The central brain in the cloud. A Fastify server that receives aggregated data from edge nodes, stores it, and serves it to the frontend.
+*   **`apps/web/` (Frontend Dashboard):** The user interface where administrators can monitor edge devices, view charts, and manage incidents.
+
+### `services/` (Edge & Local)
+*   **`services/edge/` (Edge Node):** The Python service deployed physically on-site. Listens to local machines, uses ML to detect anomalies immediately, and stores data locally if offline.
+*   **`services/simulator/` (IoT Simulator):** A Python script that generates fake sensor data (temperature, vibration) to test the software.
+
+### `infrastructure/` (Third-party Tools)
+*   **`infrastructure/mosquitto/`:** Configuration for the Eclipse Mosquitto MQTT Broker, used for local messaging between the simulator and edge node.
+
+### `packages/` (Shared Code)
+*   **`packages/`:** Shared code, TypeScript types, or utility functions used across both `apps/web` and `apps/api`.
+
+### `ml/` (Machine Learning)
+*   **`ml/`:** Workspace for Data Scientists. Contains Jupyter Notebooks, training data, and experiments before ML models are exported to the edge node.
+
+### `docs/` (Documentation)
+*   **`docs/`:** Detailed project documentation, API specs, and architecture diagrams.
+
+---
+
+## 🚀 Getting Started
+
+To spin up the entire system locally:
+
+1.  Ensure you have Docker and Docker Compose installed.
+2.  Clone the repository and set up the necessary environment variables (copy `.env.example` to `.env`).
+3.  Run the orchestration command:
+    ```bash
+    docker compose up
+    ```
+    This will boot up the API, Edge Node, Simulator, Postgres database, and Mosquitto broker on a shared virtual network.
