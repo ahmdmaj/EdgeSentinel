@@ -1,7 +1,9 @@
 import Fastify from 'fastify';
 import { z } from 'zod';
+import cors from '@fastify/cors';
 
 const fastify = Fastify({ logger: true });
+fastify.register(cors, { origin: '*' });
 
 const telemetrySchema = z.object({
   eventId: z.string(),
@@ -20,9 +22,14 @@ const telemetrySchema = z.object({
 });
 
 const processedEvents = new Set<string>();
+const recentEvents: any[] = [];
 
 fastify.get('/health', async (request, reply) => {
   return { status: 'healthy' };
+});
+
+fastify.get('/api/v1/telemetry', async (request, reply) => {
+  return reply.send(recentEvents);
 });
 
 fastify.post('/api/v1/telemetry', async (request, reply) => {
@@ -39,6 +46,11 @@ fastify.post('/api/v1/telemetry', async (request, reply) => {
     // Basic limit to prevent memory leak
     if (processedEvents.size > 10000) {
       processedEvents.clear();
+    }
+    
+    recentEvents.unshift(data);
+    if (recentEvents.length > 50) {
+      recentEvents.pop();
     }
 
     console.log("Received valid telemetry from Edge:", data);
