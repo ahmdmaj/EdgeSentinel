@@ -24,7 +24,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchTelemetry = async () => {
+    // Initial fetch for historical data
+    const fetchInitialTelemetry = async () => {
       try {
         const res = await fetch("http://localhost:3000/api/v1/telemetry");
         if (!res.ok) throw new Error("Failed to fetch");
@@ -38,10 +39,32 @@ export default function Dashboard() {
       }
     };
 
-    fetchTelemetry();
-    // Fetch data every 3 seconds
-    const interval = setInterval(fetchTelemetry, 3000);
-    return () => clearInterval(interval);
+    fetchInitialTelemetry();
+
+    // Establish SSE stream
+    const sse = new EventSource("http://localhost:3000/api/v1/telemetry/stream");
+    
+    sse.onmessage = (event) => {
+      try {
+        const newEvent = JSON.parse(event.data);
+        setEvents((prev) => {
+          const updated = [newEvent, ...prev];
+          if (updated.length > 50) return updated.slice(0, 50);
+          return updated;
+        });
+        setError(null);
+      } catch (e) {
+        console.error("Error parsing SSE data", e);
+      }
+    };
+
+    sse.onerror = () => {
+      setError("SSE stream disconnected. Reconnecting...");
+    };
+
+    return () => {
+      sse.close();
+    };
   }, []);
 
   return (
