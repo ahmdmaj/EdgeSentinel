@@ -23,6 +23,7 @@ const telemetrySchema = z.object({
 
 const processedEvents = new Set<string>();
 const recentEvents: any[] = [];
+const sseClients = new Set<any>();
 
 fastify.get('/health', async (request, reply) => {
   return { status: 'healthy' };
@@ -30,6 +31,24 @@ fastify.get('/health', async (request, reply) => {
 
 fastify.get('/api/v1/telemetry', async (request, reply) => {
   return reply.send(recentEvents);
+});
+
+fastify.get('/api/v1/telemetry/stream', (request, reply) => {
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+  
+  // Send an initial ping to establish connection
+  reply.raw.write(': ping\n\n');
+  
+  sseClients.add(reply.raw);
+  
+  request.raw.on('close', () => {
+    sseClients.delete(reply.raw);
+  });
 });
 
 fastify.post('/api/v1/telemetry', async (request, reply) => {
@@ -52,6 +71,12 @@ fastify.post('/api/v1/telemetry', async (request, reply) => {
     if (recentEvents.length > 50) {
       recentEvents.pop();
     }
+    
+    // Broadcast to active SSE clients
+    const eventString = `data: ${JSON.stringify(data)}\n\n`;
+    sseClients.forEach(client => {
+      client.write(eventString);
+    });
 
     console.log("Received valid telemetry from Edge:", data);
     return reply.status(201).send();
