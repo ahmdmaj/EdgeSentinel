@@ -70,12 +70,21 @@ def on_message(client, userdata, msg):
         payload["eventId"] = event_id
         
         async def forward_telemetry():
+            if not sync.cloud_token:
+                print("No JWT token available - caching locally.", flush=True)
+                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
+                return
+
             try:
-                async with httpx.AsyncClient(timeout=5.0) as http_client:
+                headers = {"Authorization": f"Bearer {sync.cloud_token}"}
+                async with httpx.AsyncClient(timeout=5.0, headers=headers) as http_client:
                     response = await http_client.post("http://cloud-api:3000/api/v1/telemetry", json=payload)
+                    if response.status_code == 401:
+                        sync.cloud_token = None
+                        print("Unauthorized! JWT token invalid. Will re-fetch.", flush=True)
                     response.raise_for_status()
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                print(f"Cloud unavailable - caching locally. Error: {e}", flush=True)
+                print(f"Cloud unavailable or error - caching locally. Error: {e}", flush=True)
                 await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
             except Exception as e:
                 print(f"Error forwarding telemetry to Cloud API: {e}", flush=True)
@@ -127,18 +136,23 @@ def teardown_mqtt():
 
 
 sync_task = None
+token_task = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global main_loop
     global sync_task
+    global token_task
     main_loop = asyncio.get_running_loop()
     # Startup
     storage.Base.metadata.create_all(bind=storage.engine)
     setup_mqtt()
+    token_task = asyncio.create_task(sync.fetch_token_loop())
     sync_task = asyncio.create_task(sync.sync_worker())
     yield
     # Shutdown
+    if token_task:
+        token_task.cancel()
     if sync_task:
         sync_task.cancel()
     teardown_mqtt()
