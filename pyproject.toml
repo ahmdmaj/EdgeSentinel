@@ -2,6 +2,14 @@
 # Point Pyrefly to the local virtual environment for module resolution
 python_interpreter = ".venv/Scripts/python.exe"
 
+# Minimum Python version — suppresses false positives on APIs like stdout.reconfigure()
+python_version = "3.11"
+
+# Add edge service directory so Pyrefly resolves local modules (inference, storage, sync, etc.)
+search_paths = [
+    "services/edge"
+]
+
 # Exclude Docker build artifacts and node modules from analysis
 exclude = [
     ".venv",
