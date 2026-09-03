@@ -1,9 +1,14 @@
 import Fastify from 'fastify';
 import { z } from 'zod';
 import cors from '@fastify/cors';
+import fastifyJwt from '@fastify/jwt';
 
 const fastify = Fastify({ logger: true });
 fastify.register(cors, { origin: '*' });
+
+fastify.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET || 'supersecret'
+});
 
 const telemetrySchema = z.object({
   eventId: z.string(),
@@ -30,10 +35,30 @@ fastify.get('/health', async (request, reply) => {
 });
 
 fastify.get('/api/v1/telemetry', async (request, reply) => {
+  try {
+    await request.jwtVerify();
+  } catch (err) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
   return reply.send(recentEvents);
 });
 
-fastify.get('/api/v1/telemetry/stream', (request, reply) => {
+fastify.post('/api/v1/auth/login', async (request, reply) => {
+  const { username, password } = (request.body as any) || {};
+  if (username === 'admin' && password === 'password') {
+    const token = fastify.jwt.sign({ username });
+    return reply.send({ token });
+  }
+  return reply.status(401).send({ error: 'Invalid credentials' });
+});
+
+fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
+  try {
+    await request.jwtVerify();
+  } catch (err) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -52,6 +77,12 @@ fastify.get('/api/v1/telemetry/stream', (request, reply) => {
 });
 
 fastify.post('/api/v1/telemetry', async (request, reply) => {
+  try {
+    await request.jwtVerify();
+  } catch (err) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+
   try {
     const data = telemetrySchema.parse(request.body);
     
