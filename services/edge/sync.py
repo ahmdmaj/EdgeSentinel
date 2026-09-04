@@ -37,6 +37,14 @@ async def sync_worker():
 
 def process_outbox():
     global cloud_token
+    try:
+        import main
+        if getattr(main, "FAULT_STATE", {}).get("offline", False):
+            print("Sync worker: Cloud simulated offline. Outbox sync paused.", flush=True)
+            return
+    except Exception:
+        pass
+
     session = SessionLocal()
     try:
         pending_events = session.query(OutboxEvent).filter(OutboxEvent.status == 'PENDING').all()
