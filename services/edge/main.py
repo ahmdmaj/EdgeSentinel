@@ -8,7 +8,10 @@ import time
 import asyncio
 import httpx
 import uuid
+from typing import Optional
+from pydantic import BaseModel
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -21,6 +24,11 @@ import random
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 TOPIC_WILDCARD = "edgesentinel/devices/+/telemetry"
+
+FAULT_STATE = {
+    "offline": False,
+    "latency_ms": 0
+}
 
 mqtt_client = None
 main_loop = None
@@ -57,7 +65,14 @@ def on_message(client, userdata, msg):
         
         # Simulate edge metrics and evaluate routing policy
         edge_cpu = round(random.uniform(10.0, 90.0), 2)
-        network_latency = round(random.uniform(10.0, 300.0), 2)
+        
+        # Read simulated latency if fault injection is active
+        simulated_latency = FAULT_STATE.get("latency_ms", 0)
+        if simulated_latency > 0:
+            network_latency = float(simulated_latency)
+        else:
+            network_latency = round(random.uniform(15.0, 75.0), 2)
+
         decision = decision_engine.evaluate_routing_policy(severity, network_latency, edge_cpu)
         
         payload["edgeCpu"] = edge_cpu
@@ -76,8 +91,20 @@ def on_message(client, userdata, msg):
                 return
 
             try:
+                # Fault Injection: Simulated Cloud Outage
+                if FAULT_STATE.get("offline", False):
+                    print("Simulated fault active: Offline mode forced. Raising httpx.ConnectError.", flush=True)
+                    raise httpx.ConnectError("Simulated cloud outage: Edge service is offline.")
+
+                # Fault Injection: Simulated Network Latency
+                latency_ms = FAULT_STATE.get("latency_ms", 0)
+                if latency_ms > 0:
+                    print(f"Simulated fault active: Delaying HTTP transmission by {latency_ms} ms.", flush=True)
+                    await asyncio.sleep(latency_ms / 1000.0)
+
                 headers = {"Authorization": f"Bearer {sync.cloud_token}"}
-                async with httpx.AsyncClient(timeout=5.0, headers=headers) as http_client:
+                timeout_val = max(5.0, (latency_ms / 1000.0) + 5.0)
+                async with httpx.AsyncClient(timeout=timeout_val, headers=headers) as http_client:
                     response = await http_client.post("http://cloud-api:3000/api/v1/telemetry", json=payload)
                     if response.status_code == 401:
                         sync.cloud_token = None
@@ -160,7 +187,40 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Edge Service", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class FaultUpdateRequest(BaseModel):
+    offline: Optional[bool] = None
+    latency_ms: Optional[int] = None
+
 
 @app.get("/")
 def read_root():
-    return {"status": "Edge service running"}
+    return {"status": "Edge service running", "fault_state": FAULT_STATE}
+
+
+@app.get("/faults")
+def get_faults():
+    return FAULT_STATE
+
+
+@app.post("/faults")
+async def update_faults(request: FaultUpdateRequest):
+    if request.offline is not None:
+        FAULT_STATE["offline"] = request.offline
+    if request.latency_ms is not None:
+        FAULT_STATE["latency_ms"] = max(0, request.latency_ms)
+    print(f"Fault state updated via HTTP: {FAULT_STATE}", flush=True)
+    return {
+        "status": "success",
+        "message": "Fault state updated successfully",
+        "fault_state": FAULT_STATE
+    }
+
