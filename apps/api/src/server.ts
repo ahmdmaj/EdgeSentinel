@@ -53,10 +53,23 @@ fastify.post('/api/v1/auth/login', async (request, reply) => {
 });
 
 fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
-  try {
-    await request.jwtVerify();
-  } catch (err) {
-    return reply.status(401).send({ error: 'Unauthorized' });
+  // The native browser EventSource API cannot send custom headers.
+  // Accept the token from the Authorization header OR a ?token= query param.
+  const query = request.query as Record<string, string>;
+  const queryToken = query?.token;
+
+  if (queryToken) {
+    try {
+      fastify.jwt.verify(queryToken);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+  } else {
+    try {
+      await request.jwtVerify();
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
   }
 
   reply.raw.writeHead(200, {
