@@ -4,3 +4,5 @@ paho-mqtt
 scikit-learn
 sqlalchemy
 httpx
+prometheus-fastapi-instrumentator
+prometheus-client
