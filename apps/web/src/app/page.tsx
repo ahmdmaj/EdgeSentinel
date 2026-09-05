@@ -557,7 +557,7 @@ export default function Dashboard() {
                   return (
                     <tr key={e.eventId || idx} className={rowClasses}>
                       <td className="px-6 py-4 font-mono text-xs text-zinc-400">
-                        {new Date(e.timestamp * 1000).toLocaleString()}
+                        {new Date(e.timestamp > 1e11 ? e.timestamp : e.timestamp * 1000).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 font-medium text-zinc-200">{e.deviceId}</td>
                       <td className="px-6 py-4 font-mono text-xs">
