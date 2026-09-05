@@ -10,13 +10,13 @@ def train_dummy_model():
     Features: [temperature, humidity, vibration, pressure]
     """
     np.random.seed(42)
-    # Generate dummy normal data
-    # temperature: 20-30, humidity: 40-60, vibration: 0.1-0.5, pressure: 1.0-1.2
+    # Calibrated to match simulator normal ranges:
+    # Temperature: 20 to 80, Humidity: 30 to 70, Vibration: 0.1 to 2.5, Pressure: 980 to 1025
     normal_data = np.column_stack([
-        np.random.uniform(20, 30, 200),
-        np.random.uniform(40, 60, 200),
-        np.random.uniform(0.1, 0.5, 200),
-        np.random.uniform(1.0, 1.2, 200)
+        np.random.uniform(20.0, 80.0, 200),
+        np.random.uniform(30.0, 70.0, 200),
+        np.random.uniform(0.1, 2.5, 200),
+        np.random.uniform(980.0, 1025.0, 200)
     ])
     model.fit(normal_data)
 
@@ -36,9 +36,9 @@ def classify_severity(score: float) -> str:
     """
     Classify severity based on the anomaly score.
     """
-    if score > 0.0:
+    if score >= -0.08:
         return "NORMAL"
-    elif score > -0.1:
+    elif score >= -0.12:
         return "WARNING"
     else:
         return "CRITICAL"
