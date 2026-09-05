@@ -82,11 +82,14 @@ services:
     container_name: edgesentinel-grafana
     ports:
       - "${GRAFANA_PORT:-3002}:3000"
+    volumes:
+      - ./infrastructure/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
     networks:
       - edgesentinel-network
     depends_on:
       - prometheus
     restart: unless-stopped
+
 
 networks:
   edgesentinel-network:
