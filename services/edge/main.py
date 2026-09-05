@@ -15,11 +15,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter
 import inference
 import storage
 import sync
 import decision_engine
 import random
+
+EVENTS_PROCESSED_TOTAL = Counter(
+    "events_processed_total",
+    "Total number of telemetry events processed by the edge service"
+)
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -47,6 +54,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     """Called when a message is received on a subscribed topic."""
     try:
+        EVENTS_PROCESSED_TOTAL.inc()
         payload = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message on {msg.topic}:", flush=True)
         
@@ -194,6 +202,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+Instrumentator().instrument(app).expose(app)
 
 
 class FaultUpdateRequest(BaseModel):
