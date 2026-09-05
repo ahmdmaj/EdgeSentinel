@@ -2,6 +2,14 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
+import { collectDefaultMetrics, register, Counter } from 'prom-client';
+
+collectDefaultMetrics();
+
+const cloudEventsReceivedTotal = new Counter({
+  name: 'cloud_events_received_total',
+  help: 'Total number of telemetry events received by Cloud API'
+});
 
 const fastify = Fastify({ logger: true });
 fastify.register(cors, { origin: '*' });
@@ -32,6 +40,11 @@ const sseClients = new Set<any>();
 
 fastify.get('/health', async (request, reply) => {
   return { status: 'healthy' };
+});
+
+fastify.get('/metrics', async (request, reply) => {
+  reply.header('Content-Type', register.contentType);
+  return reply.send(await register.metrics());
 });
 
 fastify.get('/api/v1/telemetry', async (request, reply) => {
@@ -90,6 +103,7 @@ fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
 });
 
 fastify.post('/api/v1/telemetry', async (request, reply) => {
+  cloudEventsReceivedTotal.inc();
   try {
     await request.jwtVerify();
   } catch (err) {
