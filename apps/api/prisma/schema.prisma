@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  role          Role     @default(VIEWER)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Device {
+  id          String      @id @default(uuid())
+  device_id   String      @unique
+  name        String
+  status      String
+  created_at  DateTime    @default(now())
+  updated_at  DateTime    @updatedAt
+  telemetry   Telemetry[]
+
+  @@map("devices")
+}
+
+model Telemetry {
+  id             String         @id @default(uuid())
+  event_id       String         @unique
+  device_id      String
+  device         Device         @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  temperature    Float
+  humidity       Float
+  vibration      Float
+  pressure       Float
+  machine_state  String
+  timestamp      DateTime
+  created_at     DateTime       @default(now())
+  anomaly_events AnomalyEvent[]
+
+  @@index([device_id])
+  @@map("telemetry")
+}
+
+model AnomalyEvent {
+  id            String    @id @default(uuid())
+  telemetry_id  String
+  telemetry     Telemetry @relation(fields: [telemetry_id], references: [id], onDelete: Cascade)
+  severity      String
+  score         Float
+  decision      String
+  model_version String
+  created_at    DateTime  @default(now())
+
+  @@index([telemetry_id])
+  @@map("anomaly_events")
+}
