@@ -54,6 +54,8 @@ pids
 # Databases
 *.sqlite
 *.sqlite3
+*.db
+*.db-journal
 
 # Env
 .env
