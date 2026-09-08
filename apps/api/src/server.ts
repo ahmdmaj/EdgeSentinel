@@ -1,8 +1,8 @@
 import Fastify from 'fastify';
-import { z } from 'zod';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { collectDefaultMetrics, register, Counter } from 'prom-client';
+import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
 
 collectDefaultMetrics();
 
@@ -18,44 +18,41 @@ fastify.register(fastifyJwt, {
   secret: process.env.JWT_SECRET || 'supersecret'
 });
 
-const telemetrySchema = z.object({
-  eventId: z.string(),
-  deviceId: z.string(),
-  temperature: z.number(),
-  humidity: z.number(),
-  vibration: z.number(),
-  pressure: z.number(),
-  machineState: z.string(),
-  timestamp: z.number(),
-  anomalyScore: z.number(),
-  severity: z.enum(["NORMAL", "WARNING", "CRITICAL"]),
-  processingDecision: z.string(),
-  edgeCpu: z.number(),
-  networkLatency: z.number()
-});
-
-const processedEvents = new Set<string>();
 const recentEvents: any[] = [];
 const sseClients = new Set<any>();
 
+// Wire real-time telemetry events to Prometheus metrics and SSE clients
+telemetryEvents.on('telemetry_received', (data: any) => {
+  cloudEventsReceivedTotal.inc();
+
+  recentEvents.unshift(data);
+  if (recentEvents.length > 50) {
+    recentEvents.pop();
+  }
+
+  // Broadcast to active SSE clients
+  const eventString = `data: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach((client) => {
+    try {
+      client.write(eventString);
+    } catch {
+      sseClients.delete(client);
+    }
+  });
+});
+
+// Health check endpoint
 fastify.get('/health', async (request, reply) => {
   return { status: 'healthy' };
 });
 
+// Prometheus metrics endpoint
 fastify.get('/metrics', async (request, reply) => {
   reply.header('Content-Type', register.contentType);
   return reply.send(await register.metrics());
 });
 
-fastify.get('/api/v1/telemetry', async (request, reply) => {
-  try {
-    await request.jwtVerify();
-  } catch (err) {
-    return reply.status(401).send({ error: 'Unauthorized' });
-  }
-  return reply.send(recentEvents);
-});
-
+// Auth login endpoint
 fastify.post('/api/v1/auth/login', async (request, reply) => {
   const { username, password } = (request.body as any) || {};
   if (username === 'admin' && password === 'password') {
@@ -65,9 +62,18 @@ fastify.post('/api/v1/auth/login', async (request, reply) => {
   return reply.status(401).send({ error: 'Invalid credentials' });
 });
 
+// Fetch recent telemetry events (used by web UI initial load)
+fastify.get('/api/v1/telemetry', async (request, reply) => {
+  try {
+    await request.jwtVerify();
+  } catch (err) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+  return reply.send(recentEvents);
+});
+
+// Real-time telemetry event stream (SSE)
 fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
-  // The native browser EventSource API cannot send custom headers.
-  // Accept the token from the Authorization header OR a ?token= query param.
   const query = request.query as Record<string, string>;
   const queryToken = query?.token;
 
@@ -91,65 +97,18 @@ fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
     'Connection': 'keep-alive',
     'Access-Control-Allow-Origin': '*'
   });
-  
-  // Send an initial ping to establish connection
+
   reply.raw.write(': ping\n\n');
-  
   sseClients.add(reply.raw);
-  
+
   request.raw.on('close', () => {
     sseClients.delete(reply.raw);
   });
 });
 
-fastify.post('/api/v1/telemetry', async (request, reply) => {
-  cloudEventsReceivedTotal.inc();
-  try {
-    await request.jwtVerify();
-  } catch (err) {
-    return reply.status(401).send({ error: 'Unauthorized' });
-  }
-
-  try {
-    const data = telemetrySchema.parse(request.body);
-    
-    // Idempotency Check
-    if (processedEvents.has(data.eventId)) {
-      console.log("Duplicate event detected and ignored");
-      return reply.status(200).send({ message: "Already processed" });
-    }
-    
-    processedEvents.add(data.eventId);
-    // Basic limit to prevent memory leak
-    if (processedEvents.size > 10000) {
-      processedEvents.clear();
-    }
-    
-    recentEvents.unshift(data);
-    if (recentEvents.length > 50) {
-      recentEvents.pop();
-    }
-    
-    // Broadcast to active SSE clients
-    const eventString = `data: ${JSON.stringify(data)}\n\n`;
-    sseClients.forEach(client => {
-      client.write(eventString);
-    });
-
-    console.log("Received valid telemetry from Edge:", data);
-    return reply.status(201).send();
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      console.log("Zod Validation Failed!");
-      error.issues.forEach(issue => {
-        console.log(`- Field '${issue.path.join('.')}' error: ${issue.message}`);
-      });
-    } else {
-      fastify.log.error(error);
-    }
-    return reply.status(400).send({ error: "Invalid telemetry data" });
-  }
-});
+// Register modular telemetry controller under /api/v1 prefix
+// Handles POST /api/v1/telemetry
+fastify.register(telemetryController, { prefix: '/api/v1' });
 
 const start = async () => {
   try {
