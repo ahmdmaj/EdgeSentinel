@@ -1,7 +1,9 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import fastifyJwt from '@fastify/jwt';
 import { collectDefaultMetrics, register, Counter } from 'prom-client';
+import authPlugin from './plugins/auth';
+import { authRoutes } from './modules/auth/auth.controller';
+import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
 import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
 
 collectDefaultMetrics();
@@ -14,9 +16,8 @@ const cloudEventsReceivedTotal = new Counter({
 const fastify = Fastify({ logger: true });
 fastify.register(cors, { origin: '*' });
 
-fastify.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET || 'supersecret'
-});
+// Register Authentication & RBAC Plugin (enforces JWT_SECRET at startup per Section 13)
+fastify.register(authPlugin);
 
 const recentEvents: any[] = [];
 const sseClients = new Set<any>();
@@ -52,22 +53,15 @@ fastify.get('/metrics', async (request, reply) => {
   return reply.send(await register.metrics());
 });
 
-// Auth login endpoint
-fastify.post('/api/v1/auth/login', async (request, reply) => {
-  const { username, password } = (request.body as any) || {};
-  if (username === 'admin' && password === 'password') {
-    const token = fastify.jwt.sign({ username });
-    return reply.send({ token });
-  }
-  return reply.status(401).send({ error: 'Invalid credentials' });
-});
+// Mount Authentication routes under /api/v1 prefix (POST /api/v1/auth/login)
+fastify.register(authRoutes, { prefix: '/api/v1' });
 
 // Fetch recent telemetry events (used by web UI initial load)
 fastify.get('/api/v1/telemetry', async (request, reply) => {
   try {
-    await request.jwtVerify();
+    await fastify.authenticate(request, reply);
   } catch (err) {
-    return reply.status(401).send({ error: 'Unauthorized' });
+    return; // Response already handled by authenticate hook
   }
   return reply.send(recentEvents);
 });
@@ -81,13 +75,13 @@ fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
     try {
       fastify.jwt.verify(queryToken);
     } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized' });
+      return reply.status(401).send({ error: { message: 'Unauthorized' } });
     }
   } else {
     try {
       await request.jwtVerify();
     } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized' });
+      return reply.status(401).send({ error: { message: 'Unauthorized' } });
     }
   }
 
@@ -106,12 +100,14 @@ fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
   });
 });
 
-// Register modular telemetry controller under /api/v1 prefix
-// Handles POST /api/v1/telemetry
+// Register modular telemetry controller under /api/v1 prefix (POST /api/v1/telemetry)
 fastify.register(telemetryController, { prefix: '/api/v1' });
 
 const start = async () => {
   try {
+    // Seed initial users (admin, operator, viewer) if the users table is empty
+    await seedDefaultUsersIfEmpty();
+
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
   } catch (err) {
     fastify.log.error(err);
