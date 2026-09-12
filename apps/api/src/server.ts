@@ -4,7 +4,7 @@ import { collectDefaultMetrics, register, Counter } from 'prom-client';
 import authPlugin from './plugins/auth';
 import { authRoutes } from './modules/auth/auth.controller';
 import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
-import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
+import { telemetryController, telemetryEvents, recentEvents } from './modules/telemetry/telemetry.controller';
 
 collectDefaultMetrics();
 
@@ -19,17 +19,11 @@ fastify.register(cors, { origin: '*' });
 // Register Authentication & RBAC Plugin (enforces JWT_SECRET at startup per Section 13)
 fastify.register(authPlugin);
 
-const recentEvents: any[] = [];
 const sseClients = new Set<any>();
 
 // Wire real-time telemetry events to Prometheus metrics and SSE clients
 telemetryEvents.on('telemetry_received', (data: any) => {
   cloudEventsReceivedTotal.inc();
-
-  recentEvents.unshift(data);
-  if (recentEvents.length > 50) {
-    recentEvents.pop();
-  }
 
   // Broadcast to active SSE clients
   const eventString = `data: ${JSON.stringify(data)}\n\n`;
@@ -56,15 +50,8 @@ fastify.get('/metrics', async (request, reply) => {
 // Mount Authentication routes under /api/v1 prefix (POST /api/v1/auth/login)
 fastify.register(authRoutes, { prefix: '/api/v1' });
 
-// Fetch recent telemetry events (used by web UI initial load)
-fastify.get('/api/v1/telemetry', async (request, reply) => {
-  try {
-    await fastify.authenticate(request, reply);
-  } catch (err) {
-    return; // Response already handled by authenticate hook
-  }
-  return reply.send(recentEvents);
-});
+// Mount Telemetry routes under /api/v1 prefix (POST & GET /api/v1/telemetry with RBAC)
+fastify.register(telemetryController, { prefix: '/api/v1' });
 
 // Real-time telemetry event stream (SSE)
 fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
@@ -99,9 +86,6 @@ fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
     sseClients.delete(reply.raw);
   });
 });
-
-// Register modular telemetry controller under /api/v1 prefix (POST /api/v1/telemetry)
-fastify.register(telemetryController, { prefix: '/api/v1' });
 
 const start = async () => {
   try {
