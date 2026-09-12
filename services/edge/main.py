@@ -21,6 +21,7 @@ import inference
 import storage
 import sync
 import decision_engine
+from app.sync.http_client import cloud_client, CloudConnectionError, CloudAuthenticationError
 import random
 
 EVENTS_PROCESSED_TOTAL = Counter(
@@ -93,16 +94,12 @@ def on_message(client, userdata, msg):
         payload["eventId"] = event_id
         
         async def forward_telemetry():
-            if not sync.cloud_token:
-                print("No JWT token available - caching locally.", flush=True)
-                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
-                return
-
             try:
                 # Fault Injection: Simulated Cloud Outage
                 if FAULT_STATE.get("offline", False):
-                    print("Simulated fault active: Offline mode forced. Raising httpx.ConnectError.", flush=True)
-                    raise httpx.ConnectError("Simulated cloud outage: Edge service is offline.")
+                    print("Simulated fault active: Offline mode forced. Caching locally to outbox.", flush=True)
+                    await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
+                    return
 
                 # Fault Injection: Simulated Network Latency
                 latency_ms = FAULT_STATE.get("latency_ms", 0)
@@ -110,19 +107,20 @@ def on_message(client, userdata, msg):
                     print(f"Simulated fault active: Delaying HTTP transmission by {latency_ms} ms.", flush=True)
                     await asyncio.sleep(latency_ms / 1000.0)
 
-                headers = {"Authorization": f"Bearer {sync.cloud_token}"}
                 timeout_val = max(5.0, (latency_ms / 1000.0) + 5.0)
-                async with httpx.AsyncClient(timeout=timeout_val, headers=headers) as http_client:
-                    response = await http_client.post("http://cloud-api:3000/api/v1/telemetry", json=payload)
-                    if response.status_code == 401:
-                        sync.cloud_token = None
-                        print("Unauthorized! JWT token invalid. Will re-fetch.", flush=True)
-                    response.raise_for_status()
-            except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                print(f"Cloud unavailable or error - caching locally. Error: {e}", flush=True)
+
+                # Send via resilient CloudApiClient with automatic authentication & 401 retry
+                response = await cloud_client.post_telemetry_async(payload, timeout=timeout_val)
+                if response.status_code in (200, 201):
+                    print(f"Telemetry event {event_id} successfully transmitted to Cloud API.", flush=True)
+                else:
+                    print(f"Cloud API returned HTTP {response.status_code} - caching locally.", flush=True)
+                    await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
+            except (CloudConnectionError, CloudAuthenticationError, httpx.RequestError, httpx.HTTPStatusError) as e:
+                print(f"Cloud unavailable or authentication error - caching locally. Error: {e}", flush=True)
                 await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
             except Exception as e:
-                print(f"Error forwarding telemetry to Cloud API: {e}", flush=True)
+                print(f"Error forwarding telemetry to Cloud API: {e} - caching locally.", flush=True)
                 await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
         
         if main_loop:
