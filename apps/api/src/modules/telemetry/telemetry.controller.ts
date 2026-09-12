@@ -2,6 +2,18 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { EventEmitter } from 'events';
 import { telemetrySchema } from './telemetry.schema';
 import { processTelemetry } from './telemetry.service';
+import type { UserTokenPayload } from '../../plugins/auth';
+
+// Ensure Fastify recognizes the authenticate and requireRole decorators
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireRole: (allowedRoles: string[]) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
+
+// In-memory buffer for recent telemetry events (used by GET /telemetry and SSE)
+export const recentEvents: any[] = [];
 
 // Event emitter to notify SSE streaming and metrics listeners without coupling controller to them
 export const telemetryEvents = new EventEmitter();
@@ -15,19 +27,6 @@ export async function handleCreateTelemetry(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  // Optional JWT verification if Authorization header is provided
-  if (request.headers.authorization && typeof (request as any).jwtVerify === 'function') {
-    try {
-      await (request as any).jwtVerify();
-    } catch (err) {
-      return reply.status(401).send({
-        error: {
-          message: 'Unauthorized: Invalid or expired token',
-        },
-      });
-    }
-  }
-
   // 1. Zod Validation
   const parseResult = telemetrySchema.safeParse(request.body);
   if (!parseResult.success) {
@@ -45,6 +44,12 @@ export async function handleCreateTelemetry(
   // 2. Delegate to Service Layer
   try {
     const result = await processTelemetry(parseResult.data);
+
+    // Track recent events buffer
+    recentEvents.unshift(parseResult.data);
+    if (recentEvents.length > 50) {
+      recentEvents.pop();
+    }
 
     // Emit event for real-time subscribers (SSE, metrics counters)
     telemetryEvents.emit('telemetry_received', parseResult.data);
@@ -68,13 +73,49 @@ export async function handleCreateTelemetry(
 }
 
 /**
- * Fastify plugin to register telemetry routes.
- * When registered with prefix '/api/v1', this exposes POST /api/v1/telemetry.
+ * Route handler for GET /api/v1/telemetry.
+ * Returns the most recent telemetry events for authenticated dashboards.
+ */
+export async function handleGetTelemetry(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  return reply.status(200).send(recentEvents);
+}
+
+/**
+ * Fastify plugin to register telemetry routes with onRequest RBAC middleware hooks.
+ * When registered with prefix '/api/v1', this exposes:
+ *   - POST /api/v1/telemetry (requires OPERATOR or ADMIN role)
+ *   - GET  /api/v1/telemetry (requires VIEWER, OPERATOR, or ADMIN role)
  */
 export async function telemetryRoutes(fastify: FastifyInstance) {
-  fastify.post('/telemetry', handleCreateTelemetry);
+  // POST /api/v1/telemetry: Protected by authenticate & requireRole(['OPERATOR', 'ADMIN'])
+  fastify.post(
+    '/telemetry',
+    {
+      onRequest: [
+        fastify.authenticate,
+        fastify.requireRole(['OPERATOR', 'ADMIN']),
+      ],
+    },
+    handleCreateTelemetry
+  );
+
+  // GET /api/v1/telemetry: Protected by authenticate & requireRole(['VIEWER', 'OPERATOR', 'ADMIN'])
+  fastify.get(
+    '/telemetry',
+    {
+      onRequest: [
+        fastify.authenticate,
+        fastify.requireRole(['VIEWER', 'OPERATOR', 'ADMIN']),
+      ],
+    },
+    handleGetTelemetry
+  );
 }
 
 // Aliases for convenient importing
 export const telemetryController = telemetryRoutes;
 export const createTelemetryHandler = handleCreateTelemetry;
+export const getTelemetryHandler = handleGetTelemetry;
