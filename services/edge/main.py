@@ -6,7 +6,6 @@ sys.stdout.reconfigure(line_buffering=True)
 import json
 import time
 import asyncio
-import httpx
 import uuid
 from typing import Optional
 from pydantic import BaseModel
@@ -18,10 +17,9 @@ from paho.mqtt.enums import CallbackAPIVersion
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
 import inference
-import storage
-import sync
 import decision_engine
-from app.sync.http_client import cloud_client, CloudConnectionError, CloudAuthenticationError
+from app.storage.outbox import outbox_repo
+from app.sync.worker import sync_worker
 import random
 
 EVENTS_PROCESSED_TOTAL = Counter(
@@ -39,25 +37,23 @@ FAULT_STATE = {
 }
 
 mqtt_client = None
-main_loop = None
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
-    """Called when the broker accepts our connection (paho-mqtt v2 API)."""
+    """Called when the client connects to the broker (paho-mqtt v2 API)."""
     if reason_code == 0:
-        print("Edge Service connected to MQTT Broker!", flush=True)
+        print(f"Connected to MQTT Broker at {MQTT_HOST}:{MQTT_PORT}. Subscribing to {TOPIC_WILDCARD}...", flush=True)
         client.subscribe(TOPIC_WILDCARD)
-        print(f"Subscribed to topic: {TOPIC_WILDCARD}", flush=True)
     else:
-        print(f"Failed to connect to MQTT Broker, reason code: {reason_code}", flush=True)
+        print(f"Failed to connect to MQTT Broker with reason code: {reason_code}", flush=True)
 
 
 def on_message(client, userdata, msg):
-    """Called when a message is received on a subscribed topic."""
+    """Processes incoming telemetry messages from MQTT broker."""
     try:
-        EVENTS_PROCESSED_TOTAL.inc()
         payload = json.loads(msg.payload.decode("utf-8"))
-        print(f"Received message on {msg.topic}:", flush=True)
+        print(f"\n--- Ingested Telemetry from {msg.topic} ---", flush=True)
+        EVENTS_PROCESSED_TOTAL.inc()
         
         # Run ML Inference
         score = inference.get_anomaly_score(
@@ -88,43 +84,16 @@ def on_message(client, userdata, msg):
         payload["networkLatency"] = network_latency
         payload["processingDecision"] = decision
         
-        print(json.dumps(payload, indent=2), flush=True)
-        
         event_id = str(uuid.uuid4())
         payload["eventId"] = event_id
         
-        async def forward_telemetry():
-            try:
-                # Fault Injection: Simulated Cloud Outage
-                if FAULT_STATE.get("offline", False):
-                    print("Simulated fault active: Offline mode forced. Caching locally to outbox.", flush=True)
-                    await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
-                    return
+        print(json.dumps(payload, indent=2), flush=True)
 
-                # Fault Injection: Simulated Network Latency
-                latency_ms = FAULT_STATE.get("latency_ms", 0)
-                if latency_ms > 0:
-                    print(f"Simulated fault active: Delaying HTTP transmission by {latency_ms} ms.", flush=True)
-                    await asyncio.sleep(latency_ms / 1000.0)
-
-                timeout_val = max(5.0, (latency_ms / 1000.0) + 5.0)
-
-                # Send via resilient CloudApiClient with automatic authentication & 401 retry
-                response = await cloud_client.post_telemetry_async(payload, timeout=timeout_val)
-                if response.status_code in (200, 201):
-                    print(f"Telemetry event {event_id} successfully transmitted to Cloud API.", flush=True)
-                else:
-                    print(f"Cloud API returned HTTP {response.status_code} - caching locally.", flush=True)
-                    await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
-            except (CloudConnectionError, CloudAuthenticationError, httpx.RequestError, httpx.HTTPStatusError) as e:
-                print(f"Cloud unavailable or authentication error - caching locally. Error: {e}", flush=True)
-                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
-            except Exception as e:
-                print(f"Error forwarding telemetry to Cloud API: {e} - caching locally.", flush=True)
-                await asyncio.to_thread(storage.save_event_to_outbox, event_id, payload)
-        
-        if main_loop:
-            asyncio.run_coroutine_threadsafe(forward_telemetry(), main_loop)
+        # Offline-First Architecture (Section 21 & Section 22):
+        # Durably enqueue event into local SQLite outbox queue first.
+        # The MQTT ingestion thread never blocks or crashes on network timeouts.
+        outbox_repo.enqueue(event_id, payload)
+        print(f"MQTT Ingest: Telemetry event {event_id} queued to local SQLite outbox.", flush=True)
             
     except json.JSONDecodeError:
         print(f"Failed to parse JSON payload from {msg.topic}: {msg.payload}", flush=True)
@@ -168,27 +137,15 @@ def teardown_mqtt():
         print("MQTT client stopped.")
 
 
-sync_task = None
-token_task = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global main_loop
-    global sync_task
-    global token_task
-    main_loop = asyncio.get_running_loop()
-    # Startup
-    storage.Base.metadata.create_all(bind=storage.engine)
+    # Startup: Launch background sync worker and connect MQTT
+    sync_worker.start()
     setup_mqtt()
-    token_task = asyncio.create_task(sync.fetch_token_loop())
-    sync_task = asyncio.create_task(sync.sync_worker())
     yield
-    # Shutdown
-    if token_task:
-        token_task.cancel()
-    if sync_task:
-        sync_task.cancel()
+    # Shutdown: Cleanly stop MQTT and cancel background sync worker
     teardown_mqtt()
+    await sync_worker.stop()
 
 
 app = FastAPI(title="Edge Service", lifespan=lifespan)
@@ -211,7 +168,11 @@ class FaultUpdateRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"status": "Edge service running", "fault_state": FAULT_STATE}
+    return {
+        "status": "Edge service running",
+        "fault_state": FAULT_STATE,
+        "outbox_stats": outbox_repo.get_stats(),
+    }
 
 
 @app.get("/faults")
@@ -232,3 +193,11 @@ async def update_faults(request: FaultUpdateRequest):
         "fault_state": FAULT_STATE
     }
 
+
+@app.get("/outbox/stats")
+def get_outbox_stats():
+    """Returns real-time status counts of the local SQLite outbox queue."""
+    return {
+        "status": "success",
+        "stats": outbox_repo.get_stats(),
+    }
