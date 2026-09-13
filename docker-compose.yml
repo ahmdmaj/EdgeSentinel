@@ -32,8 +32,13 @@ services:
     ports:
       - "${EDGE_PORT:-8000}:8000"
     environment:
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
-      - DATABASE_URL=${DATABASE_URL}
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - API_BASE_URL=http://cloud-api:3000
+      - API_EMAIL=admin@edgesentinel.local
+      - API_PASSWORD=admin123
+    volumes:
+      - ./services/edge:/app
     networks:
       - edgesentinel-network
     depends_on:
@@ -47,11 +52,12 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - JWT_SECRET=your-super-secret-jwt-key-here
+    volumes:
+      - ./apps/api/prisma:/app/prisma
     networks:
       - edgesentinel-network
-    depends_on:
-      - postgres
     restart: unless-stopped
 
   simulator:
