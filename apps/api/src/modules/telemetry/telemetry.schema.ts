@@ -17,19 +17,16 @@ export const telemetrySchema = z.object({
   }),
 
   humidity: z.number({
-    required_error: 'humidity is required',
     invalid_type_error: 'humidity must be a number',
-  }),
+  }).default(50.0),
 
   vibration: z.number({
-    required_error: 'vibration is required',
     invalid_type_error: 'vibration must be a number',
-  }),
+  }).default(0.5),
 
   pressure: z.number({
-    required_error: 'pressure is required',
     invalid_type_error: 'pressure must be a number',
-  }),
+  }).default(1013.25),
 
   machineState: z.string({
     required_error: 'machineState is required',
