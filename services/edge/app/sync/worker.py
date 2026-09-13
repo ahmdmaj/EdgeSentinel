@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import httpx
-from typing import Optional
+from typing import Optional, Callable
 from app.storage.outbox import outbox_repo, OutboxRepository
-from app.sync.http_client import cloud_client, CloudConnectionError, CloudAuthenticationError
+from app.sync.http_client import cloud_client, CloudApiClient, CloudConnectionError, CloudAuthenticationError
 
 logger = logging.getLogger("edge.sync.worker")
 
@@ -18,16 +18,20 @@ class SyncWorker:
     def __init__(
         self,
         repository: Optional[OutboxRepository] = None,
+        client: Optional[CloudApiClient] = None,
         batch_size: int = 20,
         initial_backoff: float = 2.0,
         max_backoff: float = 30.0,
         idle_poll_interval: float = 1.0,
+        is_offline_func: Optional[Callable[[], bool]] = None,
     ):
         self.repo = repository or outbox_repo
+        self.client = client or cloud_client
         self.batch_size = batch_size
         self.initial_backoff = initial_backoff
         self.max_backoff = max_backoff
         self.idle_poll_interval = idle_poll_interval
+        self.is_offline_func = is_offline_func
 
         self._backoff_delay = self.initial_backoff
         self._is_running = False
@@ -71,15 +75,11 @@ class SyncWorker:
 
         while self._is_running and not self._stop_event.is_set():
             try:
-                # Check simulated offline fault injection from main
-                try:
-                    import main
-                    if getattr(main, "FAULT_STATE", {}).get("offline", False):
-                        logger.debug("SyncWorker: Simulated offline fault active. Pausing sync.")
-                        await asyncio.sleep(self.idle_poll_interval)
-                        continue
-                except Exception:
-                    pass
+                # Check simulated offline fault injection if configured
+                if self.is_offline_func and self.is_offline_func():
+                    logger.debug("SyncWorker: Simulated offline fault active. Pausing sync.")
+                    await asyncio.sleep(self.idle_poll_interval)
+                    continue
 
                 # 1. Fetch pending batch
                 batch = self.repo.fetch_pending_batch(limit=self.batch_size)
@@ -112,7 +112,7 @@ class SyncWorker:
                         payload["eventId"] = event_id
 
                     try:
-                        resp = await cloud_client.post_telemetry_async(payload, timeout=5.0)
+                        resp = await self.client.post_telemetry_async(payload, timeout=5.0)
 
                         if resp.status_code in (200, 201):
                             self.repo.mark_sent(record_id)
