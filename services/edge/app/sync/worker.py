@@ -1,9 +1,14 @@
 import asyncio
 import logging
 import httpx
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from app.storage.outbox import outbox_repo, OutboxRepository
-from app.sync.http_client import cloud_client, CloudApiClient, CloudConnectionError, CloudAuthenticationError
+from app.sync.http_client import (
+    cloud_client,
+    CloudApiClient,
+    CloudConnectionError,
+    CloudAuthenticationError,
+)
 
 logger = logging.getLogger("edge.sync.worker")
 
@@ -12,7 +17,8 @@ class SyncWorker:
     """
     Asynchronous background worker that pulls pending batches from the SQLite outbox,
     transmits them to the Cloud API with Bearer token authentication,
-    and applies exponential backoff on cloud/network failure to prevent aggressive retries.
+    and applies exponential backoff (2^n s up to 60s) on cloud/network failures.
+    Flushes backlogged items in strict FIFO order upon recovery (Sections 21, 22, 23).
     """
 
     def __init__(
@@ -21,7 +27,7 @@ class SyncWorker:
         client: Optional[CloudApiClient] = None,
         batch_size: int = 20,
         initial_backoff: float = 2.0,
-        max_backoff: float = 30.0,
+        max_backoff: float = 60.0,
         idle_poll_interval: float = 1.0,
         is_offline_func: Optional[Callable[[], bool]] = None,
     ):
@@ -50,7 +56,7 @@ class SyncWorker:
         return self._task
 
     async def stop(self) -> None:
-        """Signals the sync worker to stop gracefully."""
+        """Signals the sync worker to stop gracefully and waits for current tasks."""
         if not self._is_running:
             return
 
@@ -70,33 +76,33 @@ class SyncWorker:
 
     async def _run_loop(self) -> None:
         """Main asynchronous processing loop with exponential backoff on failures."""
-        # On startup, recover any records stuck in PROCESSING from a prior crash
+        # On startup, recover any records stuck in PROCESSING from a prior crash/restart
         self.repo.recover_stale_processing()
 
         while self._is_running and not self._stop_event.is_set():
             try:
-                # Check simulated offline fault injection if configured
+                # 1. Check simulated offline fault injection if configured
                 if self.is_offline_func and self.is_offline_func():
                     logger.debug("SyncWorker: Simulated offline fault active. Pausing sync.")
                     await asyncio.sleep(self.idle_poll_interval)
                     continue
 
-                # 1. Fetch pending batch
+                # 2. Fetch pending batch from local outbox (FIFO: ORDER BY id ASC)
                 batch = self.repo.fetch_pending_batch(limit=self.batch_size)
                 if not batch:
-                    # Nothing to send, idle poll
+                    # Nothing pending in the outbox, sleep for idle poll interval
                     await asyncio.sleep(self.idle_poll_interval)
                     continue
 
-                batch_ids = [item["id"] for item in batch]
+                batch_ids: List[int] = [item["id"] for item in batch]
                 logger.info(f"SyncWorker: Fetched {len(batch)} pending event(s) from outbox.")
 
-                # 2. Mark batch as PROCESSING
+                # 3. Mark batch as PROCESSING
                 self.repo.mark_processing(batch_ids)
 
-                # 3. Process each item in batch
+                # 4. Transmit batch items sequentially to preserve strict ordering
                 network_failure = False
-                unprocessed_ids = []
+                unprocessed_ids: List[int] = []
 
                 for index, item in enumerate(batch):
                     if not self._is_running or self._stop_event.is_set():
@@ -107,7 +113,7 @@ class SyncWorker:
                     event_id = item["event_id"]
                     payload = item["payload"]
 
-                    # Ensure eventId is present in payload for idempotency
+                    # Ensure eventId is present in payload for cloud idempotency
                     if isinstance(payload, dict) and "eventId" not in payload:
                         payload["eventId"] = event_id
 
@@ -116,17 +122,21 @@ class SyncWorker:
 
                         if resp.status_code in (200, 201):
                             self.repo.mark_sent(record_id)
-                            logger.info(f"SyncWorker: Successfully synced event {event_id} (ID: {record_id}).")
-                            # Successful transmission resets backoff
+                            logger.info(
+                                f"SyncWorker: Successfully synced event {event_id} (ID: {record_id})."
+                            )
+                            # Reset backoff delay on successful transmission
                             self._backoff_delay = self.initial_backoff
+
                         elif resp.status_code >= 500:
                             err_msg = f"Cloud API server error: HTTP {resp.status_code}"
                             self.repo.record_failure(record_id, err_msg, max_attempts=5)
                             network_failure = True
                             unprocessed_ids.extend(batch_ids[index + 1:])
                             break
+
                         else:
-                            # 4xx Client error (e.g. 422 Unprocessable Entity)
+                            # 4xx client rejection (e.g. 422 Unprocessable)
                             err_msg = f"Cloud API rejected telemetry: HTTP {resp.status_code} - {resp.text}"
                             self.repo.record_failure(record_id, err_msg, max_attempts=5)
 
@@ -136,28 +146,43 @@ class SyncWorker:
                         network_failure = True
                         unprocessed_ids.extend(batch_ids[index + 1:])
                         break
+
                     except Exception as exc:
                         err_msg = f"Unexpected error during sync: {exc}"
                         self.repo.record_failure(record_id, err_msg, max_attempts=5)
 
-                # Reset any unattempted items in this batch back to PENDING so they don't get stuck
+                # 5. Revert any unattempted items in this batch from PROCESSING back to PENDING
                 if unprocessed_ids:
                     with self.repo._lock:
-                        with self.repo._get_connection() as conn:
+                        conn = self.repo._get_connection()
+                        try:
+                            conn.execute("BEGIN IMMEDIATE;")
                             placeholders = ",".join("?" for _ in unprocessed_ids)
                             conn.execute(
-                                f"UPDATE outbox SET status = 'PENDING' WHERE id IN ({placeholders}) AND status = 'PROCESSING'",
+                                f"""
+                                UPDATE outbox_events
+                                SET status = 'PENDING',
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id IN ({placeholders}) AND status = 'PROCESSING';
+                                """,
                                 unprocessed_ids
                             )
-                            conn.commit()
+                            conn.execute("COMMIT;")
+                        except Exception:
+                            try:
+                                conn.execute("ROLLBACK;")
+                            except Exception:
+                                pass
+                        finally:
+                            conn.close()
 
-                # 4. Handle Exponential Backoff on network / 5xx failures
+                # 6. Apply Exponential Backoff on network dropped or 5xx server errors
                 if network_failure:
                     logger.warning(
-                        f"SyncWorker: Cloud failure detected. Backing off for {self._backoff_delay:.1f}s before retry..."
+                        f"SyncWorker: Network/cloud outage detected. Backing off for {self._backoff_delay:.1f}s before retrying..."
                     )
                     await asyncio.sleep(self._backoff_delay)
-                    # Exponential increase capped at max_backoff (e.g., 2s -> 4s -> 8s -> 16s -> 30s)
+                    # Exponential increase (2^n) capped at max_backoff (60s)
                     self._backoff_delay = min(self._backoff_delay * 2, self.max_backoff)
 
             except asyncio.CancelledError:
