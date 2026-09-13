@@ -12,7 +12,6 @@ import httpx
 from app.storage.outbox import OutboxRepository
 from app.sync.worker import SyncWorker
 from app.sync.http_client import CloudApiClient
-from app.main import graceful_shutdown
 
 
 async def run_tests():
