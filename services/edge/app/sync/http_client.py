@@ -43,6 +43,28 @@ class CloudApiClient:
         raise CloudAuthenticationError(f"Unexpected login response payload: {resp_data}")
 
     # -------------------------------------------------------------------------
+    # Health Check Methods
+    # -------------------------------------------------------------------------
+
+    async def check_health_async(self, timeout: float = 3.0) -> bool:
+        """Pings the Cloud API /health endpoint asynchronously."""
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(f"{self.base_url}/health")
+                return resp.status_code == 200
+        except Exception:
+            return False
+
+    def check_health_sync(self, timeout: float = 3.0) -> bool:
+        """Pings the Cloud API /health endpoint synchronously."""
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.get(f"{self.base_url}/health")
+                return resp.status_code == 200
+        except Exception:
+            return False
+
+    # -------------------------------------------------------------------------
     # Async Methods (used by FastAPI main loop)
     # -------------------------------------------------------------------------
 
