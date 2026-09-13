@@ -3,7 +3,6 @@ import os
 import asyncio
 import threading
 import tempfile
-import time
 sys.path.insert(0, "services/edge")
 
 import httpx
@@ -12,9 +11,12 @@ from app.sync.worker import SyncWorker
 from app.sync.http_client import CloudApiClient
 
 async def run_tests():
-    # Use temporary database for tests
+    # 1. OutboxRepository tests
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
         temp_db = tf.name
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as wtf:
+        worker_db = wtf.name
 
     try:
         print("=== 1. Testing OutboxRepository Schema & Operations ===")
@@ -86,7 +88,6 @@ async def run_tests():
         print(f"Concurrent stress test passed! Successfully enqueued {len(all_pending)} events without locks.")
 
         print("\n=== 3. Testing SyncWorker with Exponential Backoff ===")
-        # Mock transport simulating Cloud API with configurable failures
         class MockTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
             def __init__(self):
                 self.should_fail = False
@@ -106,25 +107,19 @@ async def run_tests():
                 return httpx.Response(404, request=request)
 
         mock_transport = MockTransport()
-        test_client = CloudApiClient(base_url="http://mock-cloud:3000")
-
         orig_async = httpx.AsyncClient
         httpx.AsyncClient = lambda **kwargs: orig_async(transport=mock_transport, **kwargs)
 
-        import app.sync.worker
-        app.sync.worker.cloud_client = test_client
-
-        # Clean repo for worker test
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as wtf:
-            worker_db = wtf.name
+        test_client = CloudApiClient(base_url="http://mock-cloud:3000")
         worker_repo = OutboxRepository(db_path=worker_db)
 
         worker = SyncWorker(
             repository=worker_repo,
+            client=test_client,
             batch_size=5,
-            initial_backoff=0.2, # short backoff for tests
+            initial_backoff=0.2,
             max_backoff=1.0,
-            idle_poll_interval=0.1
+            idle_poll_interval=0.05
         )
 
         # Enqueue 2 events
@@ -133,17 +128,16 @@ async def run_tests():
 
         # Start worker
         worker.start()
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
 
-        # Verify both sent
         w_stats = worker_repo.get_stats()
         print("Worker Stats after success:", w_stats)
-        assert w_stats.get("SENT") == 2, "Expected 2 events SENT"
+        assert w_stats.get("SENT") == 2, f"Expected 2 events SENT, got {w_stats}"
 
         # Now test failure and exponential backoff
         mock_transport.should_fail = True
         worker_repo.enqueue("evt-w3", {"temp": 22})
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(0.4)
 
         w_stats_fail = worker_repo.get_stats()
         print("Worker Stats after failure:", w_stats_fail)
@@ -156,12 +150,15 @@ async def run_tests():
         print("SyncWorker stopped cleanly.")
 
         httpx.AsyncClient = orig_async
-
         print("\nAll Outbox & SyncWorker tests passed successfully!")
 
     finally:
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
+        for p in [temp_db, worker_db]:
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     asyncio.run(run_tests())
