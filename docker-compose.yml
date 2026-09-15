@@ -10,6 +10,12 @@ services:
       - ./infrastructure/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
     networks:
       - edgesentinel-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   postgres:
@@ -23,6 +29,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     networks:
       - edgesentinel-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d edgesentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   edge-service:
@@ -42,7 +54,10 @@ services:
     networks:
       - edgesentinel-network
     depends_on:
-      - mosquitto
+      cloud-api:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
     restart: unless-stopped
 
   cloud-api:
@@ -59,6 +74,15 @@ services:
       - ./apps/api/src:/app/src
     networks:
       - edgesentinel-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   simulator:
@@ -70,7 +94,8 @@ services:
     networks:
       - edgesentinel-network
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     restart: unless-stopped
 
   prometheus:
@@ -97,9 +122,7 @@ services:
       - prometheus
     restart: unless-stopped
 
-
 networks:
   edgesentinel-network:
     name: edgesentinel-network
     driver: bridge
-
