@@ -68,7 +68,7 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
     environment:
-      - DATABASE_URL=file:/app/prisma/dev.db
+      - DATABASE_URL=mysql://${MYSQL_USER:-admin}:${MYSQL_PASSWORD:-secret}@mysql:3306/${MYSQL_DATABASE:-edgesentinel}
       - JWT_SECRET=your-super-secret-jwt-key-here
     volumes:
       - ./apps/api/prisma:/app/prisma
