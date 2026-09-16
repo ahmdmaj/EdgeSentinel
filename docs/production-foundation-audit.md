@@ -1,9 +1,35 @@
-# EdgeSentinel — Production Foundation Audit
+# EdgeSentinel — Production Foundation Audit & Engineering Plan
 
 > **Audit Date:** 2026-09-16
 > **Auditor:** Full source-code inspection (not documentation review)
 > **Scope:** All services, configuration, infrastructure, tests, CI
-> **Verdict:** The system has a working core and several strong implementation choices, but it is **not production-ready**. Several correctness problems, security gaps, and infrastructure omissions must be resolved before any deployment.
+
+---
+
+## Current Project Description
+
+> **A functioning distributed edge-cloud prototype with persistent cloud storage, edge-side anomaly detection, offline buffering, adaptive routing, authentication, observability foundations, and automated container builds — but not yet a deployment-ready application.**
+
+The project has already crossed the "toy project" stage. Several meaningful engineering concepts are present and working:
+
+| Concept | Status |
+|---|---|
+| MQTT-based device communication | ✅ working |
+| Edge processing + ML inference (Isolation Forest) | ✅ working |
+| Offline-first architecture (SQLite outbox) | ✅ working |
+| Retry / exponential backoff | ✅ working |
+| Idempotent cloud ingestion (`event_id`) | ✅ working |
+| MySQL persistence | ✅ working |
+| JWT / RBAC authentication | ✅ working |
+| Server-Sent Events (SSE) real-time feed | ✅ working |
+| Docker Compose orchestration | ✅ working |
+| Prometheus + Grafana (foundations) | ✅ working |
+| CI (build validation) | ✅ working |
+| Fault injection lab | ✅ working |
+
+The **production engineering foundation is incomplete**. The audit below identifies what is wrong and why. The phase plan at the end of this document defines the correct order of work.
+
+**Verdict:** The system is not production-ready. Several correctness problems, security gaps, and infrastructure omissions must be resolved before any deployment.
 
 ---
 
