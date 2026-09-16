@@ -9,7 +9,7 @@ logger = logging.getLogger("edge.storage.outbox")
 
 DEFAULT_DB_PATH = os.environ.get(
     "OUTBOX_DB_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outbox.db")
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "outbox.db")
 )
 
 

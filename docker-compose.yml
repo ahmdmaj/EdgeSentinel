@@ -1,98 +1,4 @@
-version: '3.8'
 
-services:
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: edgesentinel-mosquitto
-    ports:
-      - "${MQTT_PORT:-1883}:1883"
-    volumes:
-      - ./infrastructure/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-    networks:
-      - edgesentinel-network
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    restart: unless-stopped
-
-  mysql:
-    image: mysql:8.0
-    container_name: edgesentinel-mysql
-    ports:
-      - "${MYSQL_PORT:-3306}:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-    networks:
-      - edgesentinel-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
-  edge-service:
-    build:
-      context: ./services/edge
-    container_name: edgesentinel-edge
-    ports:
-      - "${EDGE_PORT:-8000}:8000"
-    environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - API_BASE_URL=http://cloud-api:3000
-      - API_EMAIL=admin@edgesentinel.local
-      - API_PASSWORD=admin123
-    volumes:
-      - ./services/edge:/app
-    networks:
-      - edgesentinel-network
-    depends_on:
-      cloud-api:
-        condition: service_healthy
-      mosquitto:
-        condition: service_healthy
-    restart: unless-stopped
-
-  cloud-api:
-    build:
-      context: ./apps/api
-    container_name: edgesentinel-api
-    ports:
-      - "${API_PORT:-3000}:3000"
-    environment:
-      - DATABASE_URL=mysql://${MYSQL_USER:-admin}:${MYSQL_PASSWORD:-secret}@mysql:3306/${MYSQL_DATABASE:-edgesentinel}
-      - JWT_SECRET=your-super-secret-jwt-key-here
-    volumes:
-      - ./apps/api/prisma:/app/prisma
-      - ./apps/api/src:/app/src
-    networks:
-      - edgesentinel-network
-    depends_on:
-      mysql:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:3000/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
-  simulator:
-    build:
-      context: ./services/simulator
-    container_name: edgesentinel-simulator
-    environment:
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
-    networks:
       - edgesentinel-network
     depends_on:
       mosquitto:
@@ -106,6 +12,7 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     networks:
       - edgesentinel-network
     restart: unless-stopped
@@ -127,3 +34,8 @@ networks:
   edgesentinel-network:
     name: edgesentinel-network
     driver: bridge
+
+volumes:
+  mysql_data:
+  edge_outbox:
+  prometheus_data:

@@ -627,3 +627,663 @@ Derived from the actual codebase state:
 15. Write API route tests                  ← test coverage for real paths
 16. Telemetry endpoint pagination          ← handles production data volume
 ```
+
+---
+
+---
+
+# Engineering Plan — Phase Structure
+
+> This section defines **how to act on the audit findings**, using engineering judgment rather than treating every finding as an equally urgent checklist item.
+>
+> The goal is not to add more technology.
+> The goal is to make what already exists **trustworthy**.
+
+---
+
+## Engineering Mindset
+
+**Do not aim for:**
+> "How many production technologies can I put into EdgeSentinel?"
+
+**Aim for:**
+> "Can I demonstrate that EdgeSentinel continues to behave correctly when its dependencies fail, data persists across restarts, security controls actually work, and the entire system can be reproduced from a clean environment?"
+
+The core story EdgeSentinel already tells is genuinely strong:
+
+```
+Edge continues operating
+        ↓
+Cloud goes down
+        ↓
+Data is buffered locally
+        ↓
+Cloud returns
+        ↓
+Data is safely synchronized
+        ↓
+Duplicates are prevented
+        ↓
+Operators can observe the entire incident
+```
+
+If this is made genuinely reliable and deployable — without adding ten more technologies — the project becomes substantially stronger than if we added Kubernetes.
+
+---
+
+## What Phase 1 Actually Means
+
+**Phase 1 Goal:**
+
+> Make the existing EdgeSentinel system **safe, persistent, reproducible, testable, and deployable as a small production-style application**.
+
+Not "enterprise production." Not "industrial-scale production."
+
+Target:
+> **A talented engineer should realistically be able to deploy this system on a server and trust that basic failures will not destroy data or bypass security.**
+
+---
+
+## Audit Findings — Phase Classification
+
+| Finding | Phase 1? | Reason |
+|---|---|---|
+| MySQL persistent volume | **YES** | Data loss otherwise |
+| Edge SQLite persistent volume | **YES** | Outbox data loss otherwise |
+| `/telemetry` → MySQL | **YES** | API is not using persistent telemetry |
+| JWT expiry | **YES** | Fundamental authentication security |
+| JWT secret from environment | **YES** | Secret currently committed to source |
+| Seed password from environment | **YES** | Credential currently in source |
+| Remove `dev.db` | **YES** | Repository hygiene and security |
+| Fix MySQL Prisma migration | **YES** | Deployment cannot reliably recreate DB |
+| Login rate limiting | **YES** | Basic authentication protection |
+| `/faults` authentication | **YES** | Unauthenticated control endpoint |
+| MQTT authentication | **YES** | Anonymous device communication is inappropriate |
+| Pin Docker images | **YES** | Reproducible deployment |
+| Pin Python dependencies | **YES** | Reproducible deployment |
+| `npm ci` | **YES** | Reproducible Node build |
+| MySQL health check | **YES** | Health must reflect DB connectivity |
+| CI runs tests | **YES** | CI currently validates nothing |
+| Web containerization | **YES** | Needed for complete deployment |
+| API tests | **YES** | Security/core functionality needs automated verification |
+| pytest migration | **YES** | Existing tests should become real CI tests |
+| Telemetry pagination | **YES, after persistence** | Required once DB is source of truth |
+| Prometheus persistence | **YES, later in Phase 1** | Useful for deployment continuity |
+| Grafana dashboard | **YES, later** | Demonstrates observability properly |
+| Correlation IDs | **YES, later** | Important operational improvement |
+| API business metrics | **YES, later** | Needed to make observability meaningful |
+| Remove redundant JWT verify | **YES, low priority** | Correctness/cleanliness |
+| Remove duplicate token in response | **YES, low priority** | API cleanup |
+| Remove SQLAlchemy from requirements | **YES, low priority** | Dependency cleanup |
+| Remove Compose `version:` | **YES, low priority** | Cleanup |
+| Security headers | **Later** | Web deployment concern, not first blocker |
+| JWT refresh endpoint | **Later** | Not necessary with short-lived tokens |
+| Multiple device simulation | **Later** | Phase 2 feature |
+| Real ML training pipeline | **Later** | Significant separate scope |
+
+---
+
+## Phase 1 Structure
+
+Phase 1 is divided into five sequential stages. **Complete each stage before starting the next.**
+
+---
+
+### PHASE 1A — Data & Persistence
+
+**Objective:** Ensure that restarting containers does not destroy application state.
+
+#### 1. MySQL persistent volume
+
+```yaml
+volumes:
+  mysql_data:
+
+services:
+  mysql:
+    volumes:
+      - mysql_data:/var/lib/mysql
+```
+
+Protects: users, devices, telemetry, anomaly events.
+
+#### 2. Edge outbox persistent volume
+
+```yaml
+volumes:
+  edge_outbox:
+
+services:
+  edge-service:
+    volumes:
+      - edge_outbox:/app/data
+```
+
+Move `outbox.db` path from `/app/outbox.db` → `/app/data/outbox.db`.
+
+This is critical. The outbox is one of EdgeSentinel's primary engineering features. If the edge container restarts and loses its offline queue, the entire resilience story is invalidated.
+
+#### 3. Prometheus persistent volume
+
+```yaml
+volumes:
+  prometheus_data:
+
+services:
+  prometheus:
+    volumes:
+      - prometheus_data:/prometheus
+```
+
+#### 4. Fix Prisma migration for MySQL
+
+The current migration file was generated against the SQLite provider. It will not run against MySQL.
+
+The test for correctness is:
+
+```
+empty environment
+       ↓
+docker compose up
+       ↓
+database starts
+       ↓
+prisma migrate deploy
+       ↓
+schema created correctly
+       ↓
+application starts
+       ↓
+seed runs
+```
+
+If that sequence works end-to-end, the database foundation is deployable.
+
+#### 5. Remove `dev.db`
+
+Remove `apps/api/prisma/dev.db` and ensure `.gitignore` excludes `*.db`.
+
+**Phase 1A success criteria:**
+
+```
+docker compose down
+docker compose up -d
+```
+
+- Users, devices, telemetry, anomaly records are still present
+- Edge container restart does NOT destroy pending outbox events
+- MySQL restart does NOT lose data
+- Fresh environment can initialize schema from migration
+
+---
+
+### PHASE 1B — Configuration & Security Foundation
+
+**Objective:** Remove all secrets from source code and compose. Enforce secure defaults.
+
+#### 1. Remove secrets from source
+
+These values must not appear in any committed file:
+
+```
+admin123
+secret
+your-super-secret-jwt-key-here
+```
+
+Required environment variables (all must cause startup failure if unset):
+
+```
+JWT_SECRET
+MYSQL_PASSWORD
+MYSQL_ROOT_PASSWORD
+SEED_ADMIN_PASSWORD
+API_PASSWORD
+EDGE_ADMIN_TOKEN
+```
+
+#### 2. Fail fast on missing secrets
+
+Do not:
+```python
+JWT_SECRET = os.environ.get("JWT_SECRET", "default-secret")
+```
+
+Do:
+```python
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET is required and not set")
+```
+
+#### 3. JWT expiry
+
+Add `expiresIn: '8h'` to `fastify.jwt.sign()`. No need for a refresh token system in Phase 1 — short-lived access tokens are sufficient.
+
+#### 4. Rate limit login
+
+`5 attempts / minute / IP` on `POST /api/v1/auth/login`. Use `@fastify/rate-limit`. No need for advanced brute-force detection.
+
+#### 5. Secure `/faults`
+
+`POST /faults` on the edge service must require an `EDGE_ADMIN_TOKEN` header. Without this, any process with network access to port 8000 can disable the outbox sync.
+
+#### 6. MQTT authentication
+
+Change mosquitto from `allow_anonymous true` to username/password. The simulator and edge service authenticate with a shared credential. No certificates or PKI required in Phase 1.
+
+---
+
+### PHASE 1C — API Correctness
+
+**Objective:** Make the API a real application rather than a prototype.
+
+#### 1. MySQL as source of truth for telemetry
+
+Current (prototype pattern):
+```
+GET /api/v1/telemetry → recentEvents[] (in-memory, empty after restart)
+```
+
+Required:
+```
+GET /api/v1/telemetry → Fastify → Prisma → MySQL
+```
+
+#### 2. Pagination and filtering
+
+```http
+GET /api/v1/telemetry?page=1&limit=50
+GET /api/v1/telemetry?deviceId=DEVICE-001&severity=CRITICAL&from=...&to=...
+```
+
+Keep the query interface simple. Do not build a complex query engine.
+
+#### 3. Devices endpoint
+
+```http
+GET /api/v1/devices
+```
+
+Returns the list of known devices with status and last-seen timestamp. This makes the dashboard useful.
+
+#### 4. Current user endpoint
+
+```http
+GET /api/v1/me
+```
+
+Returns the authenticated user's profile and role. Useful for the dashboard and for validating stored tokens after page refresh.
+
+#### 5. Fix login response consistency
+
+Current (inconsistent):
+```json
+{ "data": { "token": "..." }, "token": "..." }
+```
+
+Required (consistent):
+```json
+{ "data": { "token": "...", "user": { "email": "...", "role": "..." } } }
+```
+
+---
+
+### PHASE 1D — Automated Testing & CI
+
+**Objective:** Make CI validate actual correctness, not just that containers build.
+
+**Target CI pipeline:**
+
+```
+Developer pushes code
+        ↓
+GitHub Actions
+        ↓
+Install dependencies
+        ↓
+Lint (ESLint + ruff/flake8)
+        ↓
+Type check (tsc --noEmit)
+        ↓
+Python tests (pytest)
+        ↓
+API tests (Fastify inject)
+        ↓
+Build Docker images
+        ↓
+docker compose config validation
+        ↓
+Integration smoke test
+        ↓
+PASS
+```
+
+#### Tests required
+
+**Edge (pytest):**
+- Outbox schema and CRUD operations
+- FIFO ordering guarantee
+- Retry state machine (PENDING → PROCESSING → SENT / FAILED)
+- Exponential backoff increases correctly
+- Stale processing recovery on startup
+- Successful synchronization drains the queue
+- Failed synchronization reverts records to PENDING
+
+**ML (pytest):**
+- Normal telemetry input → NORMAL severity
+- Warning-range input → WARNING severity
+- Critical-range input → CRITICAL severity
+- Decision engine routing: EDGE, CLOUD, HYBRID cases
+
+**API (Fastify inject):**
+- Login success returns token
+- Login with wrong password returns 401
+- JWT with no expiry (after fix: expired JWT returns 401)
+- Invalid JWT returns 401
+- VIEWER can GET telemetry (200)
+- VIEWER cannot POST telemetry (403)
+- OPERATOR can POST telemetry (201)
+- Duplicate `event_id` returns 200, not 201, and does not duplicate DB record
+- Invalid telemetry body returns 422 with field details
+
+**Integration smoke test (eventually):**
+
+```
+Send one known event via HTTP to edge /telemetry
+         ↓
+Wait for SyncWorker to forward it
+         ↓
+Assert the event appears in MySQL via GET /api/v1/telemetry
+```
+
+This single test covers the entire pipeline from ingest to persistence.
+
+---
+
+### PHASE 1E — Deployment & Observability
+
+**Objective:** Make the system fully deployable and observable.
+
+#### Docker reproducibility
+
+- Pin all base image versions with SHA digests or explicit version tags
+- Use `npm ci` in API Dockerfile
+- Pin all Python dependencies with exact versions
+- Ensure all containers run as non-root
+
+#### Web containerization
+
+Add a `web` service to `docker-compose.yml`:
+
+```yaml
+web:
+  build:
+    context: ./apps/web
+    dockerfile: Dockerfile
+  ports:
+    - "3001:3000"
+  environment:
+    - NEXT_PUBLIC_API_URL=http://localhost:3000
+  depends_on:
+    cloud-api:
+      condition: service_healthy
+  restart: unless-stopped
+```
+
+#### Grafana dashboard
+
+Provision at least one dashboard via JSON in `infrastructure/grafana/provisioning/dashboards/`.
+
+**Minimum panels for the EdgeSentinel Operations Dashboard:**
+
+| Section | Panels |
+|---|---|
+| **System** | Edge events/sec, Cloud events/sec, API request rate, API error rate |
+| **Edge** | Outbox pending count, sync failures, retry rate |
+| **ML** | NORMAL / WARNING / CRITICAL event counts (stacked), anomaly score distribution |
+| **Resilience** | Visual showing outbox growth during simulated outage, then drain on recovery |
+
+The resilience panel is the most important demonstration. It should be possible to show:
+
+```
+NORMAL OPERATION → outbox near zero
+CLOUD OUTAGE simulated → outbox count rises
+CLOUD RESTORED → outbox drains to zero
+```
+
+---
+
+## What NOT to do in Phase 1
+
+The project should not become:
+
+```
+EdgeSentinel
+ ├── Kubernetes
+ ├── Kafka
+ ├── Redis
+ ├── RabbitMQ
+ ├── Keycloak
+ ├── Terraform
+ ├── Helm
+ ├── Istio
+ ├── Vault
+ ├── ELK stack
+ ├── ArgoCD
+ ├── MLflow
+ └── 25 microservices
+```
+
+The goal is **depth rather than technology quantity**.
+
+---
+
+## Phase 2 — Edge Intelligence & Reliability
+
+*Begin only after Phase 1 is genuinely complete.*
+
+### 2.1 Real system measurements
+
+Replace:
+```python
+edge_cpu = random.uniform(10.0, 90.0)
+network_latency = random.uniform(15.0, 75.0)
+```
+
+With actual measurements:
+- CPU utilization (via `psutil`)
+- Memory utilization
+- Measured round-trip latency to cloud API
+- Real connectivity state (last successful sync timestamp)
+
+Then the decision engine produces **real adaptive routing**, not simulated behavior.
+
+### 2.2 Multiple simulated devices
+
+Move from one `DEVICE-001` to multiple devices with different profiles:
+
+```
+Factory
+├── Motor-001      (high vibration range)
+├── Pump-002       (pressure-sensitive)
+├── Compressor-003 (temperature-sensitive)
+└── Generator-004  (mixed anomaly probability)
+```
+
+Each device can have different telemetry ranges and anomaly probabilities. This significantly strengthens the edge-cloud platform story.
+
+### 2.3 Persisted ML model
+
+Move from training on synthetic data at import to a saved model artifact:
+
+```
+training script
+       ↓
+models/isolation_forest_v1.joblib
+       ↓
+edge service loads model on startup
+       ↓
+inference
+```
+
+With metadata:
+```json
+{
+  "model_version": "v1.0.0",
+  "trained_at": "2026-09-16T00:00:00Z",
+  "features": ["temperature", "humidity", "vibration", "pressure"],
+  "training_samples": 1000,
+  "contamination": 0.1
+}
+```
+
+---
+
+## Phase 3 — Deployment & CI/CD
+
+*Begin only after Phase 2 is complete.*
+
+```
+Developer
+    ↓
+GitHub
+    ↓
+CI (tests + lint + typecheck + build + scan)
+    ↓
+Container Registry (GitHub Container Registry or Docker Hub)
+    ↓
+Linux server / cloud VM
+    ↓
+docker compose up
+    ↓
+EdgeSentinel running
+```
+
+CI becomes a full pipeline:
+
+```
+Pull Request
+    ↓
+CI: lint → typecheck → tests → build → security scan
+    ↓
+PASS
+    ↓
+Merge to main
+    ↓
+Build and tag Docker image
+    ↓
+Push to container registry
+    ↓
+Deploy to server
+    ↓
+Health verification
+    ↓
+Done
+```
+
+---
+
+## Phase 4 — Operational Hardening
+
+*Begin only after Phase 3 deployment is stable.*
+
+- HTTPS / TLS via reverse proxy (nginx or Caddy)
+- Security response headers
+- MQTT TLS (within Docker network this may be optional)
+- Restricted CORS origins
+- Container resource limits
+- Database backup and restore procedure
+- Log retention policy
+- Monitoring alerts (Grafana alerting on outbox depth, error rate)
+- Operational runbook
+
+---
+
+## Full Roadmap Summary
+
+```
+EDGE SENTINEL
+│
+├── PHASE 0 — Existing Prototype ✅
+│   ├── MQTT, Edge processing, Isolation Forest, Decision engine
+│   ├── SQLite outbox, Cloud API, MySQL, JWT/RBAC
+│   ├── SSE dashboard, Prometheus, Grafana (foundations)
+│   ├── Docker Compose, Basic CI, Fault injection lab
+│
+├── PHASE 1 — Production Foundation ← CURRENT
+│   ├── 1A: Persistent MySQL, Edge outbox, Prometheus
+│   │        Correct MySQL migrations, Remove dev.db
+│   ├── 1B: Environment-based secrets, JWT expiry
+│   │        Login rate limiting, Secure /faults, MQTT auth
+│   ├── 1C: DB-backed telemetry API, Pagination/filtering
+│   │        /me endpoint, /devices endpoint, API cleanup
+│   ├── 1D: pytest suite, API route tests, CI test pipeline
+│   └── 1E: Docker reproducibility, Web container
+│            Grafana operations dashboard
+│
+├── PHASE 2 — Edge Intelligence & Reliability
+│   ├── Real CPU + latency measurements
+│   ├── Multiple devices with profiles
+│   ├── Improved decision engine (real inputs)
+│   ├── Persisted ML model with versioning
+│   └── Advanced fault scenarios
+│
+├── PHASE 3 — Deployment & CI/CD
+│   ├── Container registry
+│   ├── Linux server deployment
+│   ├── CI → image build → push → deploy
+│   ├── Health verification post-deploy
+│   └── Rollback strategy
+│
+└── PHASE 4 — Operational Hardening
+    ├── HTTPS / TLS / reverse proxy
+    ├── Security headers, restricted CORS
+    ├── Resource limits, network restrictions
+    ├── Backup/restore, log retention
+    └── Monitoring alerts, operational runbook
+```
+
+---
+
+## Where We Are Right Now
+
+```
+Prototype ──────────────────────────────┐
+                                        │
+                             [ WE ARE HERE ]
+                                        │
+                                        ▼
+                          Phase 1A: Persistence
+                          Phase 1B: Security
+                          Phase 1C: API Correctness
+                          Phase 1D: Testing & CI
+                          Phase 1E: Deployment & Observability
+                                        │
+                                        ▼
+                          Phase 2: Edge Intelligence
+                                        │
+                                        ▼
+                          Phase 3: Deployment & CD
+                                        │
+                                        ▼
+                          Phase 4: Hardening
+```
+
+**The next task is Phase 1A.** Do not start Phase 2 items yet.
+
+The implementation sequence for Phase 1A:
+
+```
+1. Backup current database data
+2. Add MySQL named volume to docker-compose.yml
+3. Add edge SQLite named volume
+4. Move outbox.db path to /app/data/outbox.db
+5. Add Prometheus named volume
+6. Fix Prisma provider and regenerate MySQL migration
+7. Remove prisma/dev.db; update .gitignore
+8. Test: fresh docker compose up creates schema correctly
+9. Test: docker compose down && docker compose up retains all data
+10. Test: edge container restart does not lose pending events
+11. Test: MySQL container restart does not lose data
+```
