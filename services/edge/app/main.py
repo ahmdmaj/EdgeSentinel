@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # Force unbuffered output for immediate container logs
-sys.stdout.reconfigure(line_buffering=True)
+sys.stdout.reconfigure(line_buffering=True)  # type: ignore
 
 # Ensure services/edge root is in sys.path for local module imports (inference, decision_engine)
 edge_root = str(Path(__file__).resolve().parent.parent)
@@ -28,10 +28,10 @@ from paho.mqtt.enums import CallbackAPIVersion
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
 
-import inference
-import decision_engine
-from app.storage.outbox import outbox_repo
-from app.sync.worker import sync_worker
+import inference  # type: ignore
+import decision_engine  # type: ignore
+from app.storage.outbox import outbox_repo  # type: ignore
+from app.sync.worker import sync_worker  # type: ignore
 
 logger = logging.getLogger("edge.main")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -56,7 +56,7 @@ _shutdown_completed = False
 
 def is_offline() -> bool:
     """Returns whether offline fault simulation is active."""
-    return bool(FAULT_STATE.get("offline", False))
+    return FAULT_STATE.get("offline", False)
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -261,7 +261,7 @@ def get_faults():
 
 
 def verify_edge_admin(x_edge_admin_token: str = Header(None)):
-    from app.config.settings import settings
+    from app.config.settings import settings  # type: ignore
     if not x_edge_admin_token or x_edge_admin_token != settings.EDGE_ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized Edge Control access")
 

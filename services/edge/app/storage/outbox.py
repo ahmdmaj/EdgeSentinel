@@ -279,7 +279,7 @@ class OutboxRepository:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE {id_column} = ?;
                     """,
-                    (str(error_message), max_attempts, event_id)
+                    (error_message, max_attempts, event_id)
                 )
                 conn.execute("COMMIT;")
                 logger.warning(
