@@ -1,8 +1,17 @@
 import 'dotenv/config';
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-super-secret-jwt-key-here') {
+  throw new Error('FATAL: JWT_SECRET environment variable is missing or insecure.');
+}
+if (!process.env.SEED_ADMIN_PASSWORD || process.env.SEED_ADMIN_PASSWORD === 'admin123') {
+  throw new Error('FATAL: SEED_ADMIN_PASSWORD environment variable is missing or insecure.');
+}
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { collectDefaultMetrics, register, Counter } from 'prom-client';
 import authPlugin from './plugins/auth';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { authRoutes } from './modules/auth/auth.controller';
 import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
 import { telemetryController, telemetryEvents, recentEvents } from './modules/telemetry/telemetry.controller';
@@ -16,6 +25,10 @@ const cloudEventsReceivedTotal = new Counter({
 
 const fastify = Fastify({ logger: true });
 fastify.register(cors, { origin: '*' });
+fastify.register(fastifyRateLimit, {
+  max: 5,
+  timeWindow: '1 minute'
+});
 
 // Register Authentication & RBAC Plugin (enforces JWT_SECRET at startup per Section 13)
 fastify.register(authPlugin);

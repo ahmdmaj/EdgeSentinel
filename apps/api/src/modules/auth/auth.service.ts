@@ -59,7 +59,9 @@ export async function login(
 export async function seedDefaultUsersIfEmpty(dbClient: PrismaClient = prisma): Promise<void> {
   const count = await dbClient.user.count();
   if (count === 0) {
-    const defaultPasswordHash = await bcrypt.hash('admin123', 10);
+    const seedPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!seedPassword) throw new Error('SEED_ADMIN_PASSWORD required for seeding');
+    const defaultPasswordHash = await bcrypt.hash(seedPassword, 10);
     await dbClient.user.createMany({
       data: [
         {
