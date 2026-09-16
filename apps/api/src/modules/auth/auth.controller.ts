@@ -39,7 +39,7 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
       userId: user.userId,
       email: user.email,
       role: user.role,
-    });
+    }, { expiresIn: '8h' });
 
     // 4. Return standard JSON envelope
     return reply.status(200).send({
@@ -76,7 +76,14 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
  * When mounted under prefix '/api/v1', exposes POST /api/v1/auth/login.
  */
 export async function authRoutes(fastify: FastifyInstance) {
-  fastify.post('/auth/login', handleLogin);
+  fastify.post('/auth/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute'
+      }
+    }
+  }, handleLogin);
 }
 
 export const authController = authRoutes;

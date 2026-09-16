@@ -5,7 +5,9 @@ const prisma = new PrismaClient();
 
 async function main() {
   const saltRounds = 10;
-  const passwordHash = await bcrypt.hash('admin123', saltRounds);
+  const seedPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!seedPassword) throw new Error('SEED_ADMIN_PASSWORD required for seeding');
+  const passwordHash = await bcrypt.hash(seedPassword, saltRounds);
 
   // Upsert default ADMIN user
   const adminUser = await prisma.user.upsert({

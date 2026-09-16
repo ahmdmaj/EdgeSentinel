@@ -27,6 +27,14 @@ load_env_file()
 class Settings:
     API_BASE_URL: str = os.environ.get("API_BASE_URL", "http://cloud-api:3000")
     API_EMAIL: str = os.environ.get("API_EMAIL", "admin@edgesentinel.local")
-    API_PASSWORD: str = os.environ.get("API_PASSWORD", "admin123")
+    
+    API_PASSWORD: str = os.environ.get("API_PASSWORD")
+    EDGE_ADMIN_TOKEN: str = os.environ.get("EDGE_ADMIN_TOKEN")
+
+    def __init__(self):
+        if not self.API_PASSWORD or self.API_PASSWORD == "admin123":
+            raise RuntimeError("FATAL: API_PASSWORD is missing or insecure.")
+        if not self.EDGE_ADMIN_TOKEN:
+            raise RuntimeError("FATAL: EDGE_ADMIN_TOKEN environment variable is missing.")
 
 settings = Settings()

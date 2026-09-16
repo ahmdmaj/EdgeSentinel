@@ -24,6 +24,7 @@ client = mqtt.Client(
     callback_api_version=CallbackAPIVersion.VERSION2,
     client_id=f"simulator-{DEVICE_ID}"
 )
+client.username_pw_set("edge_client", "edge_secure_password")
 client.on_connect = on_connect
 
 # Retry loop for initial connection — paho's loop_start handles reconnections after that

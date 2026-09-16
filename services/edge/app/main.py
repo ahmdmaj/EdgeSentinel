@@ -21,7 +21,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 
 from pydantic import BaseModel
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -132,6 +132,7 @@ def setup_mqtt():
         callback_api_version=CallbackAPIVersion.VERSION2,
         client_id=f"edge-service-{uuid.uuid4().hex[:6]}"
     )
+    mqtt_client.username_pw_set("edge_client", "edge_secure_password")
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.on_disconnect = on_disconnect
@@ -259,7 +260,13 @@ def get_faults():
     return FAULT_STATE
 
 
-@app.post("/faults")
+def verify_edge_admin(x_edge_admin_token: str = Header(None)):
+    from app.config.settings import settings
+    if not x_edge_admin_token or x_edge_admin_token != settings.EDGE_ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized Edge Control access")
+
+
+@app.post("/faults", dependencies=[Depends(verify_edge_admin)])
 async def update_faults(request: FaultUpdateRequest):
     if request.offline is not None:
         FAULT_STATE["offline"] = request.offline
