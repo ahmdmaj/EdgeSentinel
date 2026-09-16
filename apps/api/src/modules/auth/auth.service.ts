@@ -59,7 +59,7 @@ export async function login(
 export async function seedDefaultUsersIfEmpty(dbClient: PrismaClient = prisma): Promise<void> {
   const count = await dbClient.user.count();
   if (count === 0) {
-    const defaultPasswordHash = await bcrypt.hash('password', 10);
+    const defaultPasswordHash = await bcrypt.hash('admin123', 10);
     await dbClient.user.createMany({
       data: [
         {
