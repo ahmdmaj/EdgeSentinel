@@ -18,3 +18,7 @@ exclude = [
     "**/__pycache__/**",
     "**/__pyrefly_virtual__/**"
 ]
+
+[tool.pyright]
+extraPaths = ["services/edge"]
+
