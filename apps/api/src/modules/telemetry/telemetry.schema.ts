@@ -52,3 +52,8 @@ export const telemetrySchema = z.object({
 export const createTelemetrySchema = telemetrySchema;
 
 export type TelemetryInput = z.infer<typeof telemetrySchema>;
+
+export const getTelemetryQuerySchema = z.object({
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
+});

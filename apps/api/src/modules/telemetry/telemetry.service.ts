@@ -130,31 +130,29 @@ export const createTelemetry = processTelemetry;
 /**
  * Service function to retrieve paginated telemetry data from the database.
  */
-export async function getTelemetryEvents(
-  page: number = 1,
-  limit: number = 50,
+export async function getTelemetry(
+  limit: number = 20,
+  offset: number = 0,
   dbClient: PrismaClient = prisma
 ) {
-  const skip = (page - 1) * limit;
-
-  const data = await dbClient.telemetry.findMany({
-    skip,
-    take: limit,
-    orderBy: { timestamp: 'desc' },
-    include: {
-      anomaly_events: true,
-    }
-  });
-
-  const total = await dbClient.telemetry.count();
+  const [total, data] = await dbClient.$transaction([
+    dbClient.telemetry.count(),
+    dbClient.telemetry.findMany({
+      skip: offset,
+      take: limit,
+      orderBy: { timestamp: 'desc' },
+      include: {
+        anomaly_events: true,
+      }
+    })
+  ]);
 
   return {
     data,
-    meta: {
-      total,
-      page,
+    pagination: {
       limit,
-      totalPages: Math.ceil(total / limit)
+      offset,
+      total,
     }
   };
 }

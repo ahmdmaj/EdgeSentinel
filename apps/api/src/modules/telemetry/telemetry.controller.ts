@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { EventEmitter } from 'events';
-import { telemetrySchema } from './telemetry.schema';
-import { processTelemetry, getTelemetryEvents } from './telemetry.service';
+import { telemetrySchema, getTelemetryQuerySchema } from './telemetry.schema';
+import { processTelemetry, getTelemetry } from './telemetry.service';
 import type { UserTokenPayload } from '../../plugins/auth';
 
 // Ensure Fastify recognizes the authenticate and requireRole decorators
@@ -75,12 +75,20 @@ export async function handleGetTelemetry(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  const query = request.query as any;
-  const page = parseInt(query.page, 10) || 1;
-  const limit = parseInt(query.limit, 10) || 50;
+  const parseResult = getTelemetryQuerySchema.safeParse(request.query);
+  if (!parseResult.success) {
+    return reply.status(400).send({
+      error: {
+        message: 'Invalid pagination parameters',
+        details: parseResult.error.issues,
+      },
+    });
+  }
+
+  const { limit, offset } = parseResult.data;
 
   try {
-    const result = await getTelemetryEvents(page, limit);
+    const result = await getTelemetry(limit, offset);
     return reply.status(200).send(result);
   } catch (error: any) {
     request.log.error(error);
