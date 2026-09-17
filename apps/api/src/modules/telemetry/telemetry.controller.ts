@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { EventEmitter } from 'events';
 import { telemetrySchema } from './telemetry.schema';
-import { processTelemetry } from './telemetry.service';
+import { processTelemetry, getTelemetryEvents } from './telemetry.service';
 import type { UserTokenPayload } from '../../plugins/auth';
 
 // Ensure Fastify recognizes the authenticate and requireRole decorators
@@ -12,8 +12,7 @@ declare module 'fastify' {
   }
 }
 
-// In-memory buffer for recent telemetry events (used by GET /telemetry and SSE)
-export const recentEvents: any[] = [];
+
 
 // Event emitter to notify SSE streaming and metrics listeners without coupling controller to them
 export const telemetryEvents = new EventEmitter();
@@ -45,11 +44,7 @@ export async function handleCreateTelemetry(
   try {
     const result = await processTelemetry(parseResult.data);
 
-    // Track recent events buffer
-    recentEvents.unshift(parseResult.data);
-    if (recentEvents.length > 50) {
-      recentEvents.pop();
-    }
+
 
     // Emit event for real-time subscribers (SSE, metrics counters)
     telemetryEvents.emit('telemetry_received', parseResult.data);
@@ -80,7 +75,21 @@ export async function handleGetTelemetry(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  return reply.status(200).send(recentEvents);
+  const query = request.query as any;
+  const page = parseInt(query.page, 10) || 1;
+  const limit = parseInt(query.limit, 10) || 50;
+
+  try {
+    const result = await getTelemetryEvents(page, limit);
+    return reply.status(200).send(result);
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({
+      error: {
+        message: 'Internal server error while fetching telemetry',
+      },
+    });
+  }
 }
 
 /**
