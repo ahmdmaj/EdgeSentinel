@@ -15,6 +15,7 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import { authRoutes } from './modules/auth/auth.controller';
 import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
 import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
+import { devicesController } from './modules/devices/devices.controller';
 
 collectDefaultMetrics();
 
@@ -66,6 +67,9 @@ fastify.register(authRoutes, { prefix: '/api/v1' });
 
 // Mount Telemetry routes under /api/v1 prefix (POST & GET /api/v1/telemetry with RBAC)
 fastify.register(telemetryController, { prefix: '/api/v1' });
+
+// Mount Devices routes under /api/v1 prefix
+fastify.register(devicesController, { prefix: '/api/v1' });
 
 // Real-time telemetry event stream (SSE)
 fastify.get('/api/v1/telemetry/stream', async (request, reply) => {
