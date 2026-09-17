@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { LoginInput } from './auth.schema';
+import type { Role } from '../../plugins/auth';
 
 const prisma = new PrismaClient();
 
@@ -17,7 +18,7 @@ export class AuthError extends Error {
 export interface AuthUserResult {
   userId: string;
   email: string;
-  role: string;
+  role: Role;
 }
 
 /**
@@ -48,7 +49,7 @@ export async function login(
   return {
     userId: user.id,
     email: user.email,
-    role: user.role,
+    role: user.role as Role,
   };
 }
 

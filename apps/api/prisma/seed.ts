@@ -4,20 +4,26 @@ import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  const saltRounds = 10;
+  const seedEmail = process.env.SEED_ADMIN_EMAIL;
   const seedPassword = process.env.SEED_ADMIN_PASSWORD;
-  if (!seedPassword) throw new Error('SEED_ADMIN_PASSWORD required for seeding');
+
+  if (!seedEmail || !seedPassword) {
+    console.error('FATAL ERROR: SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be provided in the environment.');
+    process.exit(1);
+  }
+
+  const saltRounds = 10;
   const passwordHash = await bcrypt.hash(seedPassword, saltRounds);
 
-  // Upsert default ADMIN user
+  // Upsert the single explicit ADMIN user
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@edgesentinel.local' },
+    where: { email: seedEmail },
     update: {
       password_hash: passwordHash,
       role: 'ADMIN',
     },
     create: {
-      email: 'admin@edgesentinel.local',
+      email: seedEmail,
       password_hash: passwordHash,
       role: 'ADMIN',
     },
@@ -25,24 +31,6 @@ async function main() {
 
   console.log(
     `Seeded ADMIN user: ${adminUser.email} (ID: ${adminUser.id}, Role: ${adminUser.role})`
-  );
-
-  // Upsert baseline Device
-  const baselineDevice = await prisma.device.upsert({
-    where: { device_id: 'machine-001' },
-    update: {
-      status: 'ACTIVE',
-      name: 'Baseline Machine 001',
-    },
-    create: {
-      device_id: 'machine-001',
-      name: 'Baseline Machine 001',
-      status: 'ACTIVE',
-    },
-  });
-
-  console.log(
-    `Seeded baseline device: ${baselineDevice.device_id} (ID: ${baselineDevice.id}, Status: ${baselineDevice.status})`
   );
 }
 
