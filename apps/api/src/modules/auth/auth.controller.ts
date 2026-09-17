@@ -71,7 +71,7 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
 }
 
 /**
- * Route handler for GET /api/v1/me.
+ * Route handler for GET /api/v1/auth/me.
  * Returns the current authenticated user's details.
  */
 export async function handleGetMe(request: FastifyRequest, reply: FastifyReply) {
@@ -107,7 +107,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   }, handleLogin);
 
-  fastify.get('/me', {
+  fastify.get('/auth/me', {
     onRequest: [fastify.authenticate]
   }, handleGetMe);
 }
