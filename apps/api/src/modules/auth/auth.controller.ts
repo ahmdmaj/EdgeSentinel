@@ -80,15 +80,7 @@ export async function handleGetMe(request: FastifyRequest, reply: FastifyReply) 
     return reply.status(401).send({ error: { message: 'Unauthorized' } });
   }
 
-  return reply.status(200).send({
-    data: {
-      user: {
-        id: user.userId,
-        email: user.email,
-        role: user.role,
-      }
-    }
-  });
+  return reply.status(200).send(request.user);
 }
 
 /**
