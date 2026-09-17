@@ -14,7 +14,7 @@ import authPlugin from './plugins/auth';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { authRoutes } from './modules/auth/auth.controller';
 import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
-import { telemetryController, telemetryEvents, recentEvents } from './modules/telemetry/telemetry.controller';
+import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
 
 collectDefaultMetrics();
 
