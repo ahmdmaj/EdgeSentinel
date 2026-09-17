@@ -51,7 +51,6 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
           role: user.role,
         },
       },
-      token, // Compatibility for existing clients expecting root-level token
     });
   } catch (error: any) {
     if (error instanceof AuthError) {
@@ -72,8 +71,31 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
 }
 
 /**
+ * Route handler for GET /api/v1/me.
+ * Returns the current authenticated user's details.
+ */
+export async function handleGetMe(request: FastifyRequest, reply: FastifyReply) {
+  const user = request.user;
+  if (!user) {
+    return reply.status(401).send({ error: { message: 'Unauthorized' } });
+  }
+
+  return reply.status(200).send({
+    data: {
+      user: {
+        id: user.userId,
+        email: user.email,
+        role: user.role,
+      }
+    }
+  });
+}
+
+/**
  * Fastify plugin to register auth routes.
- * When mounted under prefix '/api/v1', exposes POST /api/v1/auth/login.
+ * When mounted under prefix '/api/v1', exposes:
+ *   - POST /api/v1/auth/login
+ *   - GET /api/v1/me
  */
 export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/login', {
@@ -84,6 +106,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
     }
   }, handleLogin);
+
+  fastify.get('/me', {
+    onRequest: [fastify.authenticate]
+  }, handleGetMe);
 }
 
 export const authController = authRoutes;
