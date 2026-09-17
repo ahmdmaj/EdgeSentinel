@@ -2,10 +2,12 @@ import fp from 'fastify-plugin';
 import fastifyJwt from '@fastify/jwt';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
+export type Role = 'ADMIN' | 'OPERATOR' | 'VIEWER';
+
 export interface UserTokenPayload {
   userId: string;
   email: string;
-  role: string;
+  role: Role;
 }
 
 declare module 'fastify' {
@@ -60,19 +62,8 @@ async function authPlugin(fastify: FastifyInstance) {
   // Fastify decorator to enforce Role-Based Access Control (RBAC)
   fastify.decorate(
     'requireRole',
-    (allowedRoles: string[]) => {
+    (allowedRoles: Role[]) => {
       return async (request: FastifyRequest, reply: FastifyReply) => {
-        // First verify authentication
-        try {
-          await request.jwtVerify();
-        } catch (err) {
-          return reply.status(401).send({
-            error: {
-              message: 'Unauthorized: Invalid or missing authentication token',
-            },
-          });
-        }
-
         const user = request.user as UserTokenPayload | undefined;
         if (!user || !user.role || !allowedRoles.includes(user.role)) {
           return reply.status(403).send({
