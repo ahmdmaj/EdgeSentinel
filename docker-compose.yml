@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   mosquitto:
@@ -91,6 +90,19 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  web:
+    build:
+      context: ./apps/web
+    container_name: edgesentinel-web
+    ports:
+      - "${WEB_PORT:-3001}:3000"
+    networks:
+      - edgesentinel-network
+    depends_on:
+      cloud-api:
+        condition: service_healthy
+    restart: unless-stopped
+
   simulator:
     build:
       context: ./services/simulator
@@ -105,7 +117,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.45.0
     container_name: edgesentinel-prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -117,12 +129,13 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:10.0.3
     container_name: edgesentinel-grafana
     ports:
       - "${GRAFANA_PORT:-3002}:3000"
     volumes:
       - ./infrastructure/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./infrastructure/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
     networks:
       - edgesentinel-network
     depends_on:

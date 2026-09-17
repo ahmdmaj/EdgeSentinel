@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 
 # Copy package manifests and install dependencies
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci
 
 # Copy Prisma schema and source files
 COPY prisma ./prisma/
