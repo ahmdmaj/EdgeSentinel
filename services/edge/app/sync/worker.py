@@ -10,6 +10,8 @@ from app.sync.http_client import (
     CloudAuthenticationError,
 )
 
+from app.main import CLOUD_SYNC_SUCCESS_TOTAL, CLOUD_SYNC_FAILURE_TOTAL, OUTBOX_PENDING_EVENTS
+
 logger = logging.getLogger("edge.sync.worker")
 
 
@@ -88,6 +90,10 @@ class SyncWorker:
                     continue
 
                 # 2. Fetch pending batch from local outbox (FIFO: ORDER BY id ASC)
+                # Update outbox pending count gauge
+                stats = self.repo.get_stats()
+                OUTBOX_PENDING_EVENTS.set(stats.get("PENDING", 0))
+
                 batch = self.repo.fetch_pending_batch(limit=self.batch_size)
                 if not batch:
                     # Nothing pending in the outbox, sleep for idle poll interval
@@ -122,6 +128,7 @@ class SyncWorker:
 
                         if resp.status_code in (200, 201):
                             self.repo.mark_sent(record_id)
+                            CLOUD_SYNC_SUCCESS_TOTAL.inc()
                             logger.info(
                                 f"SyncWorker: Successfully synced event {event_id} (ID: {record_id})."
                             )
@@ -131,6 +138,7 @@ class SyncWorker:
                         elif resp.status_code >= 500:
                             err_msg = f"Cloud API server error: HTTP {resp.status_code}"
                             self.repo.record_failure(record_id, err_msg, max_attempts=5)
+                            CLOUD_SYNC_FAILURE_TOTAL.inc()
                             network_failure = True
                             unprocessed_ids.extend(batch_ids[index + 1:])
                             break
@@ -139,10 +147,12 @@ class SyncWorker:
                             # 4xx client rejection (e.g. 422 Unprocessable)
                             err_msg = f"Cloud API rejected telemetry: HTTP {resp.status_code} - {resp.text}"
                             self.repo.record_failure(record_id, err_msg, max_attempts=5)
+                            CLOUD_SYNC_FAILURE_TOTAL.inc()
 
                     except (CloudConnectionError, CloudAuthenticationError, httpx.RequestError) as exc:
                         err_msg = f"Connection error: {exc}"
                         self.repo.record_failure(record_id, err_msg, max_attempts=5)
+                        CLOUD_SYNC_FAILURE_TOTAL.inc()
                         network_failure = True
                         unprocessed_ids.extend(batch_ids[index + 1:])
                         break
@@ -150,6 +160,7 @@ class SyncWorker:
                     except Exception as exc:
                         err_msg = f"Unexpected error during sync: {exc}"
                         self.repo.record_failure(record_id, err_msg, max_attempts=5)
+                        CLOUD_SYNC_FAILURE_TOTAL.inc()
 
                 # 5. Revert any unattempted items in this batch from PROCESSING back to PENDING
                 if unprocessed_ids:
