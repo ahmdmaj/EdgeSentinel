@@ -24,14 +24,12 @@ from pydantic import BaseModel
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 import paho.mqtt.client as mqtt
-from paho.mqtt.enums import CallbackAPIVersion
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter, Gauge
 
 import inference  # type: ignore
 import decision_engine  # type: ignore
 from app.storage.outbox import outbox_repo  # type: ignore
-from app.sync.worker import sync_worker  # type: ignore
 
 logger = logging.getLogger("edge.main")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -46,6 +44,12 @@ CLOUD_SYNC_SUCCESS_TOTAL = Counter(
     "Total number of telemetry events successfully synced to the cloud API"
 )
 
+ANOMALY_SEVERITY_DISTRIBUTION = Counter(
+    "anomaly_severity_distribution",
+    "Distribution of anomaly severities",
+    ["severity"]
+)
+
 CLOUD_SYNC_FAILURE_TOTAL = Counter(
     "cloud_sync_failure_total",
     "Total number of telemetry events that failed to sync to the cloud API"
@@ -55,6 +59,8 @@ OUTBOX_PENDING_EVENTS = Gauge(
     "outbox_pending_events",
     "Current number of pending events in the local SQLite outbox"
 )
+
+from app.sync.worker import sync_worker  # type: ignore
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -74,9 +80,10 @@ def is_offline() -> bool:
     return FAULT_STATE.get("offline", False)
 
 
-def on_connect(client, userdata, flags, reason_code, properties):
-    """Called when the client connects to the MQTT broker (paho-mqtt v2 API)."""
-    if reason_code == 0:
+def on_connect(client, userdata, flags, rc):
+    reason_code = rc
+    logger.info(f"Connected to MQTT broker with result code {rc}")
+    if rc == 0:
         logger.info(f"Connected to MQTT Broker at {MQTT_HOST}:{MQTT_PORT}. Subscribing to {TOPIC_WILDCARD}...")
         client.subscribe(TOPIC_WILDCARD)
     else:
@@ -120,6 +127,8 @@ def on_message(client, userdata, msg):
         payload["networkLatency"] = network_latency
         payload["processingDecision"] = decision
 
+        ANOMALY_SEVERITY_DISTRIBUTION.labels(severity=severity).inc()
+
         # 3. Assign unique eventId
         event_id = payload.get("eventId") or str(uuid.uuid4())
         payload["eventId"] = event_id
@@ -135,9 +144,8 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing telemetry message: {e}", exc_info=True)
 
 
-def on_disconnect(client, userdata, flags, reason_code, properties):
-    """Called when the client disconnects from the broker (paho-mqtt v2 API)."""
-    logger.warning(f"Disconnected from MQTT Broker with reason code: {reason_code}")
+def on_disconnect(client, userdata, rc):
+    logger.warning(f"Disconnected from MQTT Broker with result code {rc}")
 
 
 import threading
@@ -160,7 +168,6 @@ def setup_mqtt():
     global mqtt_client
     from app.config.settings import settings  # type: ignore
     mqtt_client = mqtt.Client(
-        callback_api_version=CallbackAPIVersion.VERSION2,
         client_id=f"edge-service-{uuid.uuid4().hex[:6]}"
     )
     mqtt_client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
@@ -338,6 +345,8 @@ async def ingest_telemetry_http(payload: dict):
         payload["edgeCpu"] = edge_cpu
         payload["networkLatency"] = network_latency
         payload["processingDecision"] = decision
+        
+        ANOMALY_SEVERITY_DISTRIBUTION.labels(severity=severity).inc()
 
         event_id = payload.get("eventId") or str(uuid.uuid4())
         payload["eventId"] = event_id

@@ -48,6 +48,8 @@ services:
     environment:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       - API_BASE_URL=http://cloud-api:3000
       - API_EMAIL=${API_EMAIL}
       - API_PASSWORD=${API_PASSWORD}
@@ -99,6 +101,8 @@ services:
       - "${WEB_PORT:-3001}:3000"
     networks:
       - edgesentinel-network
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
     depends_on:
       cloud-api:
         condition: service_healthy
@@ -110,6 +114,8 @@ services:
     container_name: edgesentinel-simulator
     environment:
       - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
     networks:
       - edgesentinel-network
     depends_on:

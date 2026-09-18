@@ -3,7 +3,6 @@ import time
 import json
 import random
 import paho.mqtt.client as mqtt
-from paho.mqtt.enums import CallbackAPIVersion
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
@@ -11,17 +10,14 @@ TOPIC = "edgesentinel/devices/DEVICE-001/telemetry"
 DEVICE_ID = "DEVICE-001"
 
 
-def on_connect(client, userdata, flags, reason_code, properties):
-    """Called when the broker accepts our connection (paho-mqtt v2 API)."""
-    if reason_code == 0:
-        print("Simulator connected to MQTT Broker!")
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Connected to MQTT Broker!")
     else:
-        print(f"Failed to connect, reason code: {reason_code}")
+        print(f"Failed to connect, result code: {rc}")
 
 
-# Use VERSION2 callback API to suppress all deprecation warnings
 client = mqtt.Client(
-    callback_api_version=CallbackAPIVersion.VERSION2,
     client_id=f"simulator-{DEVICE_ID}"
 )
 mqtt_username = os.environ.get("MQTT_USERNAME")

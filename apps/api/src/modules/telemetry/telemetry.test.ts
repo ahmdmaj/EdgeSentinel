@@ -78,6 +78,7 @@ describe('Telemetry Module Integration', () => {
         humidity: 50.0,
         vibration: 0.5,
         pressure: 1013.25,
+        machineState: 'RUNNING',
         timestamp: Date.now()
       }
     });
@@ -111,6 +112,7 @@ describe('Telemetry Module Integration', () => {
         humidity: 50.0,
         vibration: 0.5,
         pressure: 1013.25,
+        machineState: 'IDLE',
         timestamp: Date.now()
       }
     });

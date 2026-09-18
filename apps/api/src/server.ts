@@ -60,7 +60,7 @@ const fastify = Fastify({
 });
 fastify.register(cors, { origin: '*' });
 fastify.register(fastifyRateLimit, {
-  max: 5,
+  max: 100,
   timeWindow: '1 minute'
 });
 
