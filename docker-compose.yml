@@ -1,7 +1,7 @@
 
 services:
   mosquitto:
-    image: eclipse-mosquitto:2.0
+    image: eclipse-mosquitto:2.0.18
     container_name: edgesentinel-mosquitto
     ports:
       - "${MQTT_PORT:-1883}:1883"
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.36
     container_name: edgesentinel-mysql
     ports:
       - "${MYSQL_PORT:-3306}:3306"
@@ -118,7 +118,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: prom/prometheus:v2.51.1
     container_name: edgesentinel-prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -130,7 +130,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:10.0.3
+    image: grafana/grafana:10.4.2
     container_name: edgesentinel-grafana
     ports:
       - "${GRAFANA_PORT:-3002}:3000"
