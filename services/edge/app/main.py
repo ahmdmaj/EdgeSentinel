@@ -125,35 +125,36 @@ def on_disconnect(client, userdata, flags, reason_code, properties):
     logger.warning(f"Disconnected from MQTT Broker with reason code: {reason_code}")
 
 
+import threading
+
+def _mqtt_connect_loop():
+    backoff = 2
+    while not _shutdown_completed:
+        try:
+            mqtt_client.connect(MQTT_HOST, MQTT_PORT)
+            mqtt_client.loop_start()
+            logger.info("MQTT background listener loop started.")
+            break
+        except Exception as e:
+            logger.warning(f"MQTT broker connection failed: {e}. Retrying in {backoff} seconds...")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 60)
+
 def setup_mqtt():
     """Initializes and connects MQTT subscriber."""
     global mqtt_client
+    from app.config.settings import settings  # type: ignore
     mqtt_client = mqtt.Client(
         callback_api_version=CallbackAPIVersion.VERSION2,
         client_id=f"edge-service-{uuid.uuid4().hex[:6]}"
     )
-    mqtt_client.username_pw_set("edge_client", "edge_secure_password")
+    mqtt_client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.on_disconnect = on_disconnect
 
-    connected = False
-    max_retries = 3
-    retry_count = 0
-    while not connected and retry_count < max_retries:
-        try:
-            mqtt_client.connect(MQTT_HOST, MQTT_PORT)
-            connected = True
-        except Exception as e:
-            retry_count += 1
-            logger.warning(f"MQTT broker connection attempt {retry_count} failed: {e}. Retrying...")
-            time.sleep(2)
-
-    if connected:
-        mqtt_client.loop_start()
-        logger.info("MQTT background listener loop started.")
-    else:
-        logger.warning("Could not immediately connect to MQTT broker. Ingest will be inactive.")
+    t = threading.Thread(target=_mqtt_connect_loop, daemon=True)
+    t.start()
 
 
 def teardown_mqtt():
