@@ -1,90 +1,122 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import authPlugin from '../../plugins/auth';
-import { telemetryController } from './telemetry.controller';
+import { telemetryRoutes } from './telemetry.controller';
 import * as telemetryService from './telemetry.service';
 
-describe('Telemetry Module', () => {
-  let app: any;
+describe('Telemetry Module Integration', () => {
+  let fastify: any;
 
-  beforeAll(async () => {
-    process.env.JWT_SECRET = 'test-secret';
-    app = Fastify();
-    await app.register(authPlugin);
-    await app.register(telemetryController, { prefix: '/api/v1' });
-    await app.ready();
-  });
-
-  afterAll(async () => {
-    await app.close();
+  beforeEach(async () => {
+    fastify = Fastify();
+    
+    // Create a mock rate limit plugin to satisfy auth plugin dependency if any
+    fastify.register(require('@fastify/rate-limit'), { max: 100 });
+    
+    // Register the auth plugin to provide fastify.jwt and authenticate hooks
+    await fastify.register(authPlugin);
+    
+    // Register telemetry routes
+    await fastify.register(telemetryRoutes, { prefix: '/api/v1' });
+    
+    await fastify.ready();
     vi.restoreAllMocks();
   });
 
-  it('should deny POST /api/v1/telemetry for VIEWER role (403)', async () => {
-    const viewerToken = app.jwt.sign({ userId: '1', email: 'viewer@test.com', role: 'VIEWER' });
-    
-    const response = await app.inject({
+  it('should return 403 when VIEWER tries to POST telemetry', async () => {
+    const token = fastify.jwt.sign({
+      userId: 'user-viewer',
+      email: 'viewer@edgesentinel.local',
+      role: 'VIEWER'
+    }, { expiresIn: '1h' });
+
+    const response = await fastify.inject({
       method: 'POST',
       url: '/api/v1/telemetry',
-      headers: { authorization: `Bearer ${viewerToken}` },
+      headers: {
+        authorization: `Bearer ${token}`
+      },
       payload: {
-        eventId: 'test-1',
-        deviceId: 'dev-1',
-        timestamp: new Date().toISOString(),
-        temperature: 20
+        eventId: 'test-event-1',
+        deviceId: 'DEVICE-001',
+        temperature: 45.0,
+        humidity: 50.0,
+        vibration: 0.5,
+        pressure: 1013.25,
+        timestamp: Date.now()
       }
     });
 
     expect(response.statusCode).toBe(403);
+    const body = JSON.parse(response.payload);
+    expect(body.error.message).toMatch(/Forbidden/i);
   });
 
-  it('should allow POST /api/v1/telemetry for OPERATOR role (201)', async () => {
-    const operatorToken = app.jwt.sign({ userId: '2', email: 'op@test.com', role: 'OPERATOR' });
-    
+  it('should return 201 when OPERATOR POSTs new telemetry', async () => {
     vi.spyOn(telemetryService, 'processTelemetry').mockResolvedValue({
       isDuplicate: false,
-      message: 'Created',
-      data: { id: 'x', eventId: 'test-2', deviceId: 'dev-1', isDuplicate: false, createdAt: new Date() }
+      message: 'Telemetry ingested successfully',
+      data: { eventId: 'test-event-2' }
     });
 
-    const response = await app.inject({
+    const token = fastify.jwt.sign({
+      userId: 'user-operator',
+      email: 'operator@edgesentinel.local',
+      role: 'OPERATOR'
+    }, { expiresIn: '1h' });
+
+    const response = await fastify.inject({
       method: 'POST',
       url: '/api/v1/telemetry',
-      headers: { authorization: `Bearer ${operatorToken}` },
+      headers: {
+        authorization: `Bearer ${token}`
+      },
       payload: {
-        eventId: 'test-2',
-        deviceId: 'dev-1',
-        timestamp: new Date().toISOString(),
-        temperature: 20
+        eventId: 'test-event-2',
+        deviceId: 'DEVICE-001',
+        temperature: 45.0,
+        humidity: 50.0,
+        vibration: 0.5,
+        pressure: 1013.25,
+        timestamp: Date.now()
       }
     });
 
     expect(response.statusCode).toBe(201);
   });
 
-  it('should return 200 for idempotent requests (same eventId)', async () => {
-    const adminToken = app.jwt.sign({ userId: '3', email: 'admin@test.com', role: 'ADMIN' });
-    
+  it('should handle duplicate eventId safely and return 200 idempotency response', async () => {
     vi.spyOn(telemetryService, 'processTelemetry').mockResolvedValue({
       isDuplicate: true,
-      message: 'Duplicate',
-      data: { id: 'y', eventId: 'test-3', deviceId: 'dev-1', isDuplicate: true, createdAt: new Date() }
+      message: 'Duplicate event received and safely ignored',
+      data: { eventId: 'test-event-dup' }
     });
 
-    const response = await app.inject({
+    const token = fastify.jwt.sign({
+      userId: 'user-operator',
+      email: 'operator@edgesentinel.local',
+      role: 'OPERATOR'
+    }, { expiresIn: '1h' });
+
+    const response = await fastify.inject({
       method: 'POST',
       url: '/api/v1/telemetry',
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: {
+        authorization: `Bearer ${token}`
+      },
       payload: {
-        eventId: 'test-3',
-        deviceId: 'dev-1',
-        timestamp: new Date().toISOString(),
-        temperature: 20
+        eventId: 'test-event-dup',
+        deviceId: 'DEVICE-001',
+        temperature: 45.0,
+        humidity: 50.0,
+        vibration: 0.5,
+        pressure: 1013.25,
+        timestamp: Date.now()
       }
     });
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);
-    expect(body.data.isDuplicate).toBe(true);
+    expect(body.data.message).toMatch(/duplicate/i);
   });
 });

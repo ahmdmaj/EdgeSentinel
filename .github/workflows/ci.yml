@@ -21,8 +21,7 @@ jobs:
 
       - name: Install API dependencies
         working-directory: ./apps/api
-        # Uses npm ci as requested. Fallback to install if lockfile is missing locally.
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Run TypeScript Typecheck
         working-directory: ./apps/api
