@@ -49,7 +49,7 @@ services:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
       - API_BASE_URL=http://cloud-api:3000
-      - API_EMAIL=admin@edgesentinel.local
+      - API_EMAIL=${API_EMAIL}
       - API_PASSWORD=${API_PASSWORD}
       - EDGE_ADMIN_TOKEN=${EDGE_ADMIN_TOKEN}
     volumes:
@@ -71,7 +71,7 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
     environment:
-      - DATABASE_URL=mysql://${MYSQL_USER:-admin}:${MYSQL_PASSWORD:-secret}@mysql:3306/${MYSQL_DATABASE:-edgesentinel}
+      - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
     volumes:

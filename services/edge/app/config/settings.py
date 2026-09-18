@@ -30,11 +30,18 @@ class Settings:
     
     API_PASSWORD: str | None = os.environ.get("API_PASSWORD")
     EDGE_ADMIN_TOKEN: str | None = os.environ.get("EDGE_ADMIN_TOKEN")
+    
+    MQTT_USERNAME: str | None = os.environ.get("MQTT_USERNAME")
+    MQTT_PASSWORD: str | None = os.environ.get("MQTT_PASSWORD")
 
     def __init__(self):
         if not self.API_PASSWORD or self.API_PASSWORD == "admin123":
-            raise RuntimeError("FATAL: API_PASSWORD is missing or insecure.")
+            raise ValueError("FATAL: API_PASSWORD is missing or insecure.")
         if not self.EDGE_ADMIN_TOKEN:
-            raise RuntimeError("FATAL: EDGE_ADMIN_TOKEN environment variable is missing.")
+            raise ValueError("FATAL: EDGE_ADMIN_TOKEN environment variable is missing.")
+        if not self.MQTT_USERNAME:
+            raise ValueError("FATAL: MQTT_USERNAME environment variable is missing.")
+        if not self.MQTT_PASSWORD or self.MQTT_PASSWORD == "admin123":
+            raise ValueError("FATAL: MQTT_PASSWORD environment variable is missing or insecure.")
 
 settings = Settings()

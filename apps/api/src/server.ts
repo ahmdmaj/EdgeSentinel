@@ -1,10 +1,29 @@
 import 'dotenv/config';
 
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-super-secret-jwt-key-here') {
-  throw new Error('FATAL: JWT_SECRET environment variable is missing or insecure.');
-}
-if (!process.env.SEED_ADMIN_PASSWORD || process.env.SEED_ADMIN_PASSWORD === 'admin123') {
-  throw new Error('FATAL: SEED_ADMIN_PASSWORD environment variable is missing or insecure.');
+const requiredEnvVars = [
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'SEED_ADMIN_EMAIL',
+  'SEED_ADMIN_PASSWORD'
+];
+
+const dummyValues = [
+  'your-super-secret-jwt-key-here',
+  'admin123',
+  'secret',
+  'admin'
+];
+
+for (const envVar of requiredEnvVars) {
+  const value = process.env[envVar];
+  if (!value) {
+    console.error(`FATAL ERROR: Environment variable ${envVar} is missing.`);
+    process.exit(1);
+  }
+  if (dummyValues.includes(value)) {
+    console.error(`FATAL ERROR: Environment variable ${envVar} contains an insecure dummy value.`);
+    process.exit(1);
+  }
 }
 
 import Fastify from 'fastify';
