@@ -40,17 +40,20 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json* ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# Copy entrypoint script
+COPY entrypoint.sh ./entrypoint.sh
+
 # Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Fix permissions
-RUN chown -R node:node /app
+# Fix permissions and make entrypoint executable
+RUN chown -R node:node /app && chmod +x /app/entrypoint.sh
 
 # Run the application as the unprivileged non-root node user
 USER node
 
 EXPOSE 3000
 
-# Launch Cloud API
-CMD ["npx", "tsx", "src/server.ts"]
+# Run migrations then start the API server
+CMD ["/bin/sh", "/app/entrypoint.sh"]
