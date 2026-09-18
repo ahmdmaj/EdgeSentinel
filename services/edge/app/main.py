@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 import inference  # type: ignore
 import decision_engine  # type: ignore
@@ -39,6 +39,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 EVENTS_PROCESSED_TOTAL = Counter(
     "events_processed_total",
     "Total number of telemetry events processed by the edge service"
+)
+
+CLOUD_SYNC_SUCCESS_TOTAL = Counter(
+    "cloud_sync_success_total",
+    "Total number of telemetry events successfully synced to the cloud API"
+)
+
+CLOUD_SYNC_FAILURE_TOTAL = Counter(
+    "cloud_sync_failure_total",
+    "Total number of telemetry events that failed to sync to the cloud API"
+)
+
+OUTBOX_PENDING_EVENTS = Gauge(
+    "outbox_pending_events",
+    "Current number of pending events in the local SQLite outbox"
 )
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
