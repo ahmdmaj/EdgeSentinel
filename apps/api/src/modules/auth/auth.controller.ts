@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { loginSchema } from './auth.schema';
 import { login, AuthError } from './auth.service';
+import { authEvents } from '../telemetry/telemetry.controller';
 
 /**
  * Route handler for POST /api/v1/auth/login.
@@ -54,6 +55,7 @@ export async function handleLogin(request: FastifyRequest, reply: FastifyReply) 
     });
   } catch (error: any) {
     if (error instanceof AuthError) {
+      authEvents.emit('auth_failure');
       return reply.status(error.statusCode).send({
         error: {
           message: error.message,

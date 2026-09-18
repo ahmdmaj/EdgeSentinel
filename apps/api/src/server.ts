@@ -33,7 +33,7 @@ import authPlugin from './plugins/auth';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { authRoutes } from './modules/auth/auth.controller';
 import { seedDefaultUsersIfEmpty } from './modules/auth/auth.service';
-import { telemetryController, telemetryEvents } from './modules/telemetry/telemetry.controller';
+import { telemetryController, telemetryEvents, authEvents } from './modules/telemetry/telemetry.controller';
 import { devicesController } from './modules/devices/devices.controller';
 
 collectDefaultMetrics();
@@ -43,7 +43,21 @@ const cloudEventsReceivedTotal = new Counter({
   help: 'Total number of telemetry events received by Cloud API'
 });
 
-const fastify = Fastify({ logger: true });
+const telemetryReceivedTotal = new Counter({
+  name: 'telemetry_received_total',
+  help: 'Total number of telemetry events received by Cloud API, labeled by status',
+  labelNames: ['status']
+});
+
+const authFailuresTotal = new Counter({
+  name: 'auth_failures_total',
+  help: 'Total number of failed authentication attempts'
+});
+
+const fastify = Fastify({ 
+  logger: true,
+  requestIdHeader: 'x-request-id'
+});
 fastify.register(cors, { origin: '*' });
 fastify.register(fastifyRateLimit, {
   max: 5,
@@ -56,11 +70,12 @@ fastify.register(authPlugin);
 const sseClients = new Set<any>();
 
 // Wire real-time telemetry events to Prometheus metrics and SSE clients
-telemetryEvents.on('telemetry_received', (data: any) => {
+telemetryEvents.on('telemetry_received', (event: any) => {
   cloudEventsReceivedTotal.inc();
+  telemetryReceivedTotal.inc({ status: event.status || 'success' });
 
   // Broadcast to active SSE clients
-  const eventString = `data: ${JSON.stringify(data)}\n\n`;
+  const eventString = `data: ${JSON.stringify(event.data || event)}\n\n`;
   sseClients.forEach((client) => {
     try {
       client.write(eventString);
@@ -68,6 +83,10 @@ telemetryEvents.on('telemetry_received', (data: any) => {
       sseClients.delete(client);
     }
   });
+});
+
+authEvents.on('auth_failure', () => {
+  authFailuresTotal.inc();
 });
 
 // Health check endpoint

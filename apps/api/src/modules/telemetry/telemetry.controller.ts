@@ -16,6 +16,7 @@ declare module 'fastify' {
 
 // Event emitter to notify SSE streaming and metrics listeners without coupling controller to them
 export const telemetryEvents = new EventEmitter();
+export const authEvents = new EventEmitter();
 
 /**
  * Route handler for POST /api/v1/telemetry.
@@ -47,7 +48,10 @@ export async function handleCreateTelemetry(
 
 
     // Emit event for real-time subscribers (SSE, metrics counters)
-    telemetryEvents.emit('telemetry_received', parseResult.data);
+    telemetryEvents.emit('telemetry_received', {
+      data: parseResult.data,
+      status: result.isDuplicate ? 'duplicate' : 'success'
+    });
 
     // 3. Return standardized JSON response
     const statusCode = result.isDuplicate ? 200 : 201;
