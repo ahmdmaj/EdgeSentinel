@@ -30,12 +30,22 @@ WORKDIR /app
 # Install curl for container health checks and OpenSSL for Prisma engine
 RUN apt-get update && apt-get install -y --no-install-recommends curl openssl && rm -rf /var/lib/apt/lists/*
 
+# Copy package manifests and install dependencies strictly
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# Copy application files and generated Prisma client from builder
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json* ./
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 # Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy application files and generated Prisma client from builder with node ownership
-COPY --from=builder --chown=node:node /app ./
+# Fix permissions
+RUN chown -R node:node /app
 
 # Run the application as the unprivileged non-root node user
 USER node
