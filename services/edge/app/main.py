@@ -153,6 +153,9 @@ import threading
 def _mqtt_connect_loop():
     backoff = 2
     while not _shutdown_completed:
+        if mqtt_client is None:
+            time.sleep(1)
+            continue
         try:
             mqtt_client.connect(MQTT_HOST, MQTT_PORT)
             mqtt_client.loop_start()
@@ -162,6 +165,7 @@ def _mqtt_connect_loop():
             logger.warning(f"MQTT broker connection failed: {e}. Retrying in {backoff} seconds...")
             time.sleep(backoff)
             backoff = min(backoff * 2, 60)
+
 
 def setup_mqtt():
     """Initializes and connects MQTT subscriber."""
