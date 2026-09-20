@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # EdgeSentinel Internal Services (Not Exposed)
+  # ==========================================
+  mysql:
+    ports: [] # Remove host port binding
+
+  mosquitto:
+    ports: [] # Remove host port binding
+
+  prometheus:
+    ports: [] # Remove host port binding
+
+  grafana:
+    ports: [] # Remove host port binding
+
+  simulator:
+    # Simulator should not be exposed in any way
+
+  edge-service:
+    ports: [] # Remove host port binding
+
+  # ==========================================
+  # Cloud API (Exposed via Traefik Reverse Proxy)
+  # ==========================================
+  cloud-api:
+    ports: [] # Remove host port binding
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+  # ==========================================
+  # Web Dashboard (Exposed via Traefik Reverse Proxy)
+  # ==========================================
+  web:
+    ports: [] # Remove host port binding
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`dashboard.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+
+  # ==========================================
+  # Traefik Reverse Proxy
+  # ==========================================
+  traefik:
+    image: traefik:v2.11
+    container_name: edgesentinel-traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "traefik-certs:/letsencrypt"
+    networks:
+      - edgesentinel-network
+    restart: unless-stopped
+
+volumes:
+  traefik-certs:
