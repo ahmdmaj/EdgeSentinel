@@ -1,42 +1,40 @@
 # EdgeSentinel Production Deployment Runbook
 
-This runbook details the exact steps required to deploy the EdgeSentinel stack onto a fresh Linux VM in a production environment. 
-This deployment uses Docker Compose and Traefik for automatic SSL generation via Let's Encrypt.
+This runbook details the exact steps required to deploy the EdgeSentinel stack in a strictly isolated environment. 
+This deployment uses Docker Compose and Nginx as a reverse proxy, terminating SSL locally using a self-signed certificate.
 
 ## Prerequisites
 
-1. A fresh Linux VM (Ubuntu 22.04 or 24.04 recommended) with a public IP address.
-2. Two DNS `A` records pointing to your VM's public IP address:
-   - `api.yourdomain.com` (Cloud API)
-   - `dashboard.yourdomain.com` (Web Dashboard)
-3. Docker and Docker Compose installed on the VM.
+1. A machine with Docker and Docker Compose installed.
+2. Bash (or Git Bash on Windows) to run the SSL generation script.
 
 ## Step-by-Step Deployment
 
 ### 1. Clone the Repository
-Connect to your VM via SSH and clone the EdgeSentinel repository:
+Connect to your machine and clone the EdgeSentinel repository:
 
 ```bash
 git clone https://github.com/ahmdmaj/EdgeSentinel.git
 cd EdgeSentinel
 ```
 
-### 2. Configure Production Secrets
+### 2. Generate Local SSL Certificates
+Run the provided bash script to generate the self-signed certificates that Nginx will use.
+
+```bash
+bash infrastructure/nginx/generate-ssl.sh
+```
+
+This will create `cert.pem` and `key.pem` inside the `infrastructure/nginx/ssl` directory.
+
+### 3. Configure Production Secrets
 Do not use the default `.env` or `.env.example` file in production. Instead, create a strictly separated `.env.production` file.
 
 ```bash
 cp .env.production.example .env.production
 ```
 
-Open `.env.production` using `nano` or `vim`:
-
-```bash
-nano .env.production
-```
-
-Fill in all the required variables:
-- `DOMAIN_NAME`: Set this to your base domain (e.g., `yourdomain.com`).
-- `ACME_EMAIL`: The email used for Let's Encrypt certificates.
+Open `.env.production` using your text editor and fill in all the required variables:
 - Generate strong, random passwords for `MYSQL_PASSWORD`, `MQTT_PASSWORD`, `JWT_SECRET`, etc.
 
 **Critical Note:** You must manually generate and sync the MQTT password file using the Mosquitto utility. If you changed `MQTT_PASSWORD` in `.env.production`, run this command to update the `mosquitto.passwd` file:
@@ -45,8 +43,8 @@ Fill in all the required variables:
 docker run --rm -v "$(pwd)/infrastructure/mosquitto/config:/mosquitto/config" eclipse-mosquitto:2.0.18 sh -c "mosquitto_passwd -b -c /mosquitto/config/mosquitto.passwd edge_client YOUR_NEW_MQTT_PASSWORD"
 ```
 
-### 3. Deploy the Stack
-Launch the stack using both the base compose file and the production override file. The production override removes exposed host ports and introduces the Traefik reverse proxy.
+### 4. Deploy the Stack
+Launch the stack using both the base compose file and the production override file. The production override removes exposed host ports and introduces the Nginx reverse proxy.
 
 ```bash
 # First, pull/build the images
@@ -56,23 +54,25 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml build
 docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-### 4. Verification
-Check the status of the containers. All containers should be `Up (healthy)`.
+### 5. Verification
+Check the status of the containers. All containers should be `Up`.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ```
 
-Monitor Traefik logs to ensure SSL certificates were provisioned successfully:
+Monitor Nginx logs to ensure it booted and found the SSL certificates successfully:
 
 ```bash
-docker logs edgesentinel-traefik
+docker logs edgesentinel-nginx
 ```
 
-### 5. Access the System
-Your system is now live and secure!
+### 6. Access the System
+Your system is now live and isolated!
 
-- **Web Dashboard:** `https://dashboard.yourdomain.com`
-- **Cloud API:** `https://api.yourdomain.com`
+- **Web Dashboard:** `https://localhost`
+- **Cloud API:** `https://localhost/api/`
 
-*Note: Internal services like MySQL, Prometheus, Grafana, and MQTT are fully firewalled by Docker and are only accessible inside the `edgesentinel-network`.*
+*Note: Your browser will show a "Not Secure" warning because the certificate is self-signed. This is expected for localhost development. Click "Advanced" -> "Proceed to localhost" to view the dashboard.*
+
+*Note: Internal services like MySQL, Prometheus, Grafana, Cloud API, Web, and MQTT are fully firewalled by Docker and are only accessible inside the `edgesentinel-network`.*
