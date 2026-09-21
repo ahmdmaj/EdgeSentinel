@@ -28,6 +28,7 @@ for (const envVar of requiredEnvVars) {
 
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import { collectDefaultMetrics, register, Counter } from 'prom-client';
 import authPlugin from './plugins/auth';
 import fastifyRateLimit from '@fastify/rate-limit';
@@ -58,7 +59,32 @@ const fastify = Fastify({
   logger: true,
   requestIdHeader: 'x-request-id'
 });
-fastify.register(cors, { origin: '*' });
+
+// Security Plugins
+fastify.register(helmet, {
+  // Configured to not break Next.js development and standard usage
+  contentSecurityPolicy: false, // Let Next.js handle its own CSP
+  crossOriginResourcePolicy: { policy: "cross-origin" } 
+});
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3001', 'http://localhost']; // Safe development defaults
+
+fastify.register(cors, {
+  origin: (origin, cb) => {
+    // Allow server-to-server requests (like from Next.js SSR) which have no origin
+    if (!origin) {
+      return cb(null, true);
+    }
+    if (allowedOrigins.includes(origin)) {
+      cb(null, true);
+      return;
+    }
+    // Block wildcard * in production
+    cb(new Error('Not allowed by CORS'), false);
+  }
+});
 fastify.register(fastifyRateLimit, {
   max: 100,
   timeWindow: '1 minute'
