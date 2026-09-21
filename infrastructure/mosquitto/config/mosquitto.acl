@@ -1,0 +1,9 @@
+# Mosquitto Access Control List
+
+# Rule 1: Edge service user has read/write access to edgesentinel/#
+user edge_client
+topic readwrite edgesentinel/#
+
+# Rule 2: Simulator user has write access only to telemetry
+user device_client
+topic write edgesentinel/devices/+/telemetry
