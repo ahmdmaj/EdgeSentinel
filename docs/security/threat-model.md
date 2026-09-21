@@ -1,0 +1,12 @@
+# EdgeSentinel Threat Model
+
+This document outlines the primary threat vectors identified for the EdgeSentinel architecture and details the mitigations implemented to secure the system.
+
+## Threat Matrix
+
+| Threat ID | Description | Impact | Mitigation Strategy Implemented |
+| :--- | :--- | :--- | :--- |
+| **TM-01** | **Malicious device flooding MQTT with data.** A compromised or rogue device attempts to overwhelm the broker or publish malicious payloads to unauthorized topics. | Denial of Service (DoS), Data Poisoning | **Mosquitto Access Control Lists (ACLs):** Anonymous access is disabled (`allow_anonymous false`). The `device_client` is strictly restricted via `mosquitto.acl` to only have `write` access to its specific `edgesentinel/devices/+/telemetry` topic. It cannot subscribe to other topics or publish to administrative topics. |
+| **TM-02** | **Compromise of an Edge Node's local database.** An attacker gains physical or logical access to the Edge Node and attempts to read or modify the buffered telemetry data. | Data Tampering, Information Disclosure | **Least Privilege & Container Isolation:** The Edge Node runs as a non-root user within a minimal Alpine/Slim container. The local SQLite database (`outbox.db`) is strictly a temporary, ephemeral buffer. Data is actively drained to the Cloud API, minimizing the window of exposure. |
+| **TM-03** | **Unauthorized attempt to access Cloud API telemetry endpoints.** An external actor attempts to read sensitive machine telemetry or inject fake data directly into the Cloud API. | Data Breach, Data Integrity Loss | **JWT & Role-Based Access Control (RBAC):** All API endpoints require a valid JWT signed by the `JWT_SECRET`. The API strictly enforces roles (e.g., only `OPERATOR` can submit telemetry, `VIEWER` can only read). Rate limiting (max 100 req/min, 5 req/min for login) mitigates brute-force token guessing. |
+| **TM-04** | **Accidental exposure of the Cloud MySQL port to the internet.** Misconfiguration leads to the database port (3306) being exposed directly to the public internet, inviting brute-force attacks. | Total Database Compromise, Ransomware | **Docker Network Isolation & Reverse Proxy:** In production (`docker-compose.prod.yml`), the MySQL host port binding is entirely removed. The database is only accessible internally within the `edgesentinel-network`. External traffic must route through the Nginx reverse proxy, which terminates SSL and only forwards specific paths (`/` and `/api/`) to the designated containers. |
