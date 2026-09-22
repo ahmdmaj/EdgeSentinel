@@ -68,7 +68,8 @@ services:
 
   cloud-api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: edgesentinel-api
     ports:
       - "${API_PORT:-3000}:3000"
