@@ -28,6 +28,9 @@ services:
   web:
     ports: [] # Remove host port binding
 
+  alertmanager:
+    ports: [] # Remove host port binding
+
   # ==========================================
   # Nginx Reverse Proxy (SSL Termination)
   # ==========================================
