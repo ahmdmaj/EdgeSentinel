@@ -149,6 +149,17 @@ services:
       - prometheus
     restart: unless-stopped
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: edgesentinel-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    networks:
+      - edgesentinel-network
+    restart: unless-stopped
+
 networks:
   edgesentinel-network:
     name: edgesentinel-network
