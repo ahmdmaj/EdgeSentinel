@@ -1,0 +1,29 @@
+groups:
+  - name: edgesentinel.rules
+    rules:
+      - alert: ApiDown
+        expr: up{job="cloud-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cloud API is down"
+          description: "The Cloud API has been unreachable for more than 1 minute."
+
+      - alert: DatabaseDown
+        expr: up{job="mysql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL Database is down"
+          description: "The MySQL container has been unreachable for more than 1 minute."
+
+      - alert: HighOutboxBacklog
+        expr: outbox_pending_events > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Outbox Backlog on Edge Node"
+          description: "The Edge Node has more than 100 pending telemetry events in its outbox for over 2 minutes."
