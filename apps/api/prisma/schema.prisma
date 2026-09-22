@@ -45,6 +45,8 @@ model Telemetry {
   anomaly_events AnomalyEvent[]
 
   @@index([device_id])
+  @@index([timestamp(sort: Desc)])
+  @@index([device_id, timestamp(sort: Desc)])
   @@map("telemetry")
 }
 
