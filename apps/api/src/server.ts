@@ -55,9 +55,26 @@ const authFailuresTotal = new Counter({
   help: 'Total number of failed authentication attempts'
 });
 
+import crypto from 'crypto';
+
 const fastify = Fastify({ 
-  logger: true,
-  requestIdHeader: 'x-request-id'
+  logger: {
+    level: 'info',
+    serializers: {
+      req(req) {
+        return {
+          method: req.method,
+          url: req.url,
+          reqId: req.id, // Ensure reqId is included in every log line
+        };
+      }
+    }
+  },
+  genReqId: function (req) {
+    return (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  },
+  requestIdHeader: 'x-request-id',
+  requestIdLogLabel: 'reqId'
 });
 
 // Security Plugins
