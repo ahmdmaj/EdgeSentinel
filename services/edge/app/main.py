@@ -30,6 +30,7 @@ from prometheus_client import Counter, Gauge
 import inference  # type: ignore
 import decision_engine  # type: ignore
 from app.storage.outbox import outbox_repo  # type: ignore
+from app.metrics_collector import collect as collect_metrics  # type: ignore
 
 logger = logging.getLogger("edge.main")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -114,13 +115,12 @@ def on_message(client, userdata, msg):
         payload["anomalyScore"] = score
         payload["severity"] = severity
 
-        # 2. Evaluate edge routing policy
-        edge_cpu = round(random.uniform(10.0, 90.0), 2)
+        # 2. Evaluate edge routing policy using real host metrics
+        real_metrics = collect_metrics()
+        edge_cpu = real_metrics["cpu_percent"]
+        # Allow fault injection to override the real latency (for testing)
         simulated_latency = FAULT_STATE.get("latency_ms", 0)
-        if simulated_latency > 0:
-            network_latency = float(simulated_latency)
-        else:
-            network_latency = round(random.uniform(15.0, 75.0), 2)
+        network_latency = float(simulated_latency) if simulated_latency > 0 else real_metrics["api_latency_ms"]
 
         decision = decision_engine.evaluate_routing_policy(severity, network_latency, edge_cpu)
         payload["edgeCpu"] = edge_cpu
@@ -342,9 +342,10 @@ async def ingest_telemetry_http(payload: dict):
         payload["anomalyScore"] = score
         payload["severity"] = severity
 
-        edge_cpu = round(random.uniform(10.0, 90.0), 2)
+        real_metrics = collect_metrics()
+        edge_cpu = real_metrics["cpu_percent"]
         simulated_latency = FAULT_STATE.get("latency_ms", 0)
-        network_latency = float(simulated_latency) if simulated_latency > 0 else round(random.uniform(15.0, 75.0), 2)
+        network_latency = float(simulated_latency) if simulated_latency > 0 else real_metrics["api_latency_ms"]
         decision = decision_engine.evaluate_routing_policy(severity, network_latency, edge_cpu)
         payload["edgeCpu"] = edge_cpu
         payload["networkLatency"] = network_latency
