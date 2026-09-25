@@ -1,32 +1,45 @@
+import os
+import json
+import joblib
 import numpy as np
-from sklearn.ensemble import IsolationForest
 
-# Initialize the Isolation Forest model
-model = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
+# Load model version from environment, defaulting to v1.0.0
+MODEL_VERSION = os.environ.get("MODEL_VERSION", "v1.0.0")
 
-def train_dummy_model():
-    """
-    Train the model on a dummy dataset representing normal operating ranges.
-    Features: [temperature, humidity, vibration, pressure]
-    """
-    np.random.seed(42)
-    # Calibrated to match simulator normal ranges:
-    # Temperature: 20 to 80, Humidity: 30 to 70, Vibration: 0.1 to 2.5, Pressure: 980 to 1025
-    normal_data = np.column_stack([
-        np.random.uniform(20.0, 80.0, 200),
-        np.random.uniform(30.0, 70.0, 200),
-        np.random.uniform(0.1, 2.5, 200),
-        np.random.uniform(980.0, 1025.0, 200)
-    ])
-    model.fit(normal_data)
+# Paths inside the container where the models directory is mounted
+MODELS_DIR = "/app/models"
+MODEL_PATH = os.path.join(MODELS_DIR, f"isolation_forest_{MODEL_VERSION}.joblib")
+METADATA_PATH = os.path.join(MODELS_DIR, f"metadata_{MODEL_VERSION}.json")
 
-# Train the model upon initialization
-train_dummy_model()
+# Fallback paths for local testing
+if not os.path.exists(MODELS_DIR):
+    MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ml", "models")
+    MODEL_PATH = os.path.join(MODELS_DIR, f"isolation_forest_{MODEL_VERSION}.joblib")
+    METADATA_PATH = os.path.join(MODELS_DIR, f"metadata_{MODEL_VERSION}.json")
+
+try:
+    print(f"Loading model artifact: {MODEL_PATH}")
+    model = joblib.load(MODEL_PATH)
+    
+    print(f"Loading model metadata: {METADATA_PATH}")
+    with open(METADATA_PATH, "r") as f:
+        metadata = json.load(f)
+        
+    WARNING_LIMIT = metadata.get("thresholds", {}).get("warning_limit", -0.1)
+    CRITICAL_LIMIT = metadata.get("thresholds", {}).get("critical_limit", -0.2)
+except Exception as e:
+    print(f"Warning: Failed to load model or metadata: {e}")
+    # Fallback dummy model/thresholds if files are missing
+    from sklearn.ensemble import IsolationForest
+    model = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
+    # Dummy training to avoid NotFittedError during fallback
+    model.fit(np.random.normal(loc=0, scale=1, size=(100, 4)))
+    WARNING_LIMIT = -0.08
+    CRITICAL_LIMIT = -0.12
 
 def get_anomaly_score(temperature: float, humidity: float, vibration: float, pressure: float) -> float:
     """
     Calculate the anomaly score for the given telemetry.
-    The score is typically negative for anomalies and positive for normal points.
     """
     X = np.array([[temperature, humidity, vibration, pressure]])
     score = model.decision_function(X)[0]
@@ -34,11 +47,11 @@ def get_anomaly_score(temperature: float, humidity: float, vibration: float, pre
 
 def classify_severity(score: float) -> str:
     """
-    Classify severity based on the anomaly score.
+    Classify severity based on the loaded anomaly score thresholds.
     """
-    if score >= -0.08:
+    if score >= WARNING_LIMIT:
         return "NORMAL"
-    elif score >= -0.12:
+    elif score >= CRITICAL_LIMIT:
         return "WARNING"
     else:
         return "CRITICAL"

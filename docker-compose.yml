@@ -54,8 +54,10 @@ services:
       - API_EMAIL=${API_EMAIL}
       - API_PASSWORD=${API_PASSWORD}
       - EDGE_ADMIN_TOKEN=${EDGE_ADMIN_TOKEN}
+      - MODEL_VERSION=${MODEL_VERSION:-v1.0.0}
     volumes:
       - ./services/edge:/app
+      - ./ml/models:/app/models
       - edge_outbox:/app/data
     networks:
       - edgesentinel-network
