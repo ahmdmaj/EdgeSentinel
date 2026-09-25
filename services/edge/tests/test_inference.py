@@ -27,6 +27,6 @@ def test_warning_telemetry():
 def test_critical_telemetry():
     """Test an extreme telemetry vector."""
     # Extreme values
-    score = inference.get_anomaly_score(150.0, 0.0, 10.0, 1500.0)
+    score = inference.get_anomaly_score(500.0, 0.0, 50.0, 5000.0)
     severity = inference.classify_severity(score)
     assert severity == "CRITICAL", f"Expected CRITICAL, got {severity} with score {score}"

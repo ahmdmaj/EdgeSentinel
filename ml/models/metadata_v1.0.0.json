@@ -1,7 +1,7 @@
 {
   "model_name": "IsolationForest_AnomalyDetector",
   "model_version": "v1.0.0",
-  "training_date": "2026-09-25T01:31:42.626998+00:00",
+  "training_date": "2026-09-25T01:36:49.572598+00:00",
   "features": [
     "temperature",
     "humidity",
@@ -9,7 +9,7 @@
     "pressure"
   ],
   "thresholds": {
-    "warning_limit": -0.1,
-    "critical_limit": -0.2
+    "warning_limit": -0.05,
+    "critical_limit": -0.14
   }
 }

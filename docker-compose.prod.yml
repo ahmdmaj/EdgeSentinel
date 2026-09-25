@@ -20,12 +20,18 @@ services:
     # Simulator should not be exposed in any way
 
   edge-service:
+    image: ghcr.io/${GH_USERNAME}/edgesentinel-edge:${IMAGE_TAG:-main}
+    build: null
     ports: [] # Remove host port binding
 
   cloud-api:
+    image: ghcr.io/${GH_USERNAME}/edgesentinel-api:${IMAGE_TAG:-main}
+    build: null
     ports: [] # Remove host port binding
 
   web:
+    image: ghcr.io/${GH_USERNAME}/edgesentinel-web:${IMAGE_TAG:-main}
+    build: null
     ports: [] # Remove host port binding
 
   alertmanager:

@@ -49,8 +49,8 @@ def main():
         "training_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "features": ["temperature", "humidity", "vibration", "pressure"],
         "thresholds": {
-            "warning_limit": -0.1,  # Example: scores between -0.1 and -0.2 are WARNING
-            "critical_limit": -0.2  # Example: scores <= -0.2 are CRITICAL
+            "warning_limit": -0.05,
+            "critical_limit": -0.14
         }
     }
     
