@@ -1,52 +1,81 @@
-# EdgeSentinel
+# EdgeSentinel 🛡️
 
-EdgeSentinel is a resilient, edge-to-cloud anomaly detection platform designed for industrial IoT environments. It provides real-time sensor monitoring, machine learning inference at the edge, and robust cloud persistence to ensure continuous operational visibility even during intermittent network connectivity.
+[![CI Pipeline](https://github.com/ahmdmaj/EdgeSentinel/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/ahmdmaj/EdgeSentinel/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-## System Architecture & Data Flow
+**EdgeSentinel is an engineered, offline-first edge-cloud anomaly detection platform.**
 
-The platform is designed around a distributed architecture that separates local edge ingestion and inference from centralized cloud aggregation.
+Built to demonstrate production-grade architectural patterns, EdgeSentinel simulates an industrial IoT fleet that feeds sensor telemetry through a highly resilient edge node up to a secure cloud dashboard. It goes beyond the "happy path" by natively handling catastrophic network failures, dynamic resource constraints, and automated CI/CD lifecycles.
 
-1. **IoT Simulator (Sensors)**: Generates synthetic telemetry data (temperature, humidity, vibration, pressure).
-2. **MQTT Broker (Eclipse Mosquitto)**: Acts as the local ingestion layer, accepting high-throughput telemetry streams from the edge sensors.
-3. **Python Edge Node**: Subscribes to the MQTT broker, computes local Machine Learning anomaly scores using `scikit-learn`, and buffers the enriched telemetry locally using a SQLite outbox for offline-first resilience.
-4. **Cloud API (Fastify / Node.js)**: A high-performance HTTP service that securely ingests batched telemetry from edge nodes and broadcasts real-time data via Server-Sent Events (SSE).
-5. **Cloud Database (MySQL 8.0)**: Provides durable, relational persistence for the aggregated telemetry, devices, and anomaly events.
+## 🚀 Key Engineering Features
 
-## Local Setup & Deployment
+* **Offline-First Edge Resilience:** When the cloud API goes down, the Edge Node seamlessly buffers telemetry in a local SQLite Write-Ahead Log (WAL), replaying events in strict FIFO order upon recovery—guaranteeing zero data loss.
+* **Adaptive Edge Routing:** A deterministic decision engine routes traffic based on *real* host CPU metrics (via `psutil`) and actual TCP socket latency to the cloud, dropping or deferring low-priority events during system duress.
+* **ML Artifact Versioning:** Machine Learning isn't an afterthought. The `IsolationForest` anomaly detector is trained, serialized (`.joblib`), and loaded dynamically from disk via environment variables, allowing instant rollback of inference models without recompiling containers.
+* **Automated CI/CD & Security:** GitHub Actions automatically tests, lint-checks, and scans for secrets (Gitleaks) on every commit. Pushing to `main` triggers Trivy vulnerability scans and publishes immutable container images to the GitHub Container Registry (GHCR).
+* **Production Observability:** The entire stack is heavily instrumented. Prometheus scrapes custom business metrics, Grafana visualizes the fleet, and Alertmanager routes critical alerts (e.g., `ApiDown`, `EdgeOutboxStalled`) when SLAs are breached.
 
-EdgeSentinel utilizes Docker Compose to guarantee deterministic and reproducible local environments. 
+---
 
-### Prerequisites
-- Docker & Docker Compose
-- Node.js (v22+)
-- Python (3.11+)
+## 🏗️ System Architecture
 
-### Initialization
+EdgeSentinel separates concerns across three strict boundaries: the isolated IoT fleet, the local Edge Node, and the Cloud Environment. 
 
-Because the MySQL database volume is completely empty on its first boot, the Cloud API requires the database schema to be initialized before it can safely start up and seed default data. 
+*See the complete [System Architecture Diagram & Component Breakdown](docs/architecture/system-architecture.md).*
 
-To prevent the API from crashing on its initial boot, you **must** sync the Prisma schema to the database first:
+---
 
+## ⚡ Quick Start (Local Evaluation)
+
+You can boot the entire production-like cluster locally on your machine using Docker Compose.
+
+**1. Clone the repository:**
 ```bash
-# 1. Ensure any old containers and volumes are cleared
-docker compose down -v
-
-# 2. Push the Prisma schema to the MySQL database
-docker compose run --rm cloud-api npx prisma db push
-
-# 3. Bring up the full orchestrated stack in the background
-docker compose up -d --build
+git clone https://github.com/ahmdmaj/EdgeSentinel.git
+cd EdgeSentinel
 ```
 
-### Accessing the Services
-- **Cloud API**: `http://localhost:3000`
-- **Edge Node Health**: `http://localhost:8000`
-- **Grafana Dashboards**: `http://localhost:3002`
-- **Prometheus Metrics**: `http://localhost:9090`
+**2. Configure the environment:**
+```bash
+# Generate the base environment file
+cp .env.example .env
+```
 
-## Documentation & Architecture Decision Records (ADRs)
+**3. Boot the stack:**
+```bash
+# This builds and starts the MQTT broker, MySQL, Fastify API, Python Edge Node, Next.js Web Dashboard, and the Observability Stack.
+docker compose up --build -d
+```
 
-Key engineering decisions and technical rationales are formally documented in the `docs/decisions/` directory:
-- [ADR-001: Offline-First Edge Resiliency](docs/decisions/ADR-001-offline-first-edge.md)
-- [ADR-002: Database Migration to MySQL](docs/decisions/ADR-002-database-migration-mysql.md)
-- [ADR-003: Deterministic Docker Orchestration](docs/decisions/ADR-003-deterministic-docker-orchestration.md)
+**4. Explore the system:**
+- **Web Dashboard:** `http://localhost:3001` (Login with `admin@edgesentinel.local` / `S3cur3P@ssw0rd!`)
+- **Grafana Metrics:** `http://localhost:3002` (Login with `admin` / `admin`)
+- **API Health:** `http://localhost:3000/health`
+
+---
+
+## 📚 Portfolio Documentation & Evidence
+
+This repository is built to be evaluated. Please review the following technical documents that prove the platform's reliability, security, and production readiness:
+
+* 🏗️ **[System Architecture](docs/architecture/system-architecture.md)** — Data flow diagrams and security boundaries.
+* ✅ **[Final Validation Report](docs/testing/final-validation-report.md)** — Master checklist and chaos testing results.
+* 📈 **[Capacity & Load Test Report](docs/performance/capacity-report.md)** — k6 throughput metrics and resource utilization ceilings.
+* 🚨 **[Disaster Recovery Runbook](docs/runbooks/disaster-recovery.md)** — RPO/RTO definitions and explicit database backup/restore procedures.
+* 🚢 **[Release & Rollback SOP](docs/runbooks/release-and-rollback.md)** — Deployment procedures leveraging immutable GHCR tags.
+* 🧠 **[ML Model Card](docs/architecture/model-card.md)** — Isolation Forest training baselines, statistical thresholds, and limitations.
+* 🔒 **[Threat Model](docs/architecture/threat-model.md)** — STRIDE analysis and mitigated attack vectors.
+
+---
+
+## 🛠️ Technology Stack
+
+- **Cloud API:** Node.js, Fastify, Prisma (MySQL 8)
+- **Edge Node:** Python 3.11, FastAPI, Paho-MQTT, Scikit-learn
+- **Frontend:** Next.js (React), TailwindCSS
+- **Infrastructure:** Docker Compose, Nginx, Mosquitto
+- **DevSecOps:** GitHub Actions, GHCR, Gitleaks, Trivy
+- **Observability:** Prometheus, Grafana, Alertmanager
+
+---
+*EdgeSentinel was architected and built as a comprehensive demonstration of Full-Stack Platform Engineering.*
