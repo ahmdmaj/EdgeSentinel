@@ -176,7 +176,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(sync_failures_total[5m]))",
+          "expr": "sum(increase(cloud_sync_failure_total[5m]))",
           "legendFormat": "Failures",
           "range": true,
           "refId": "A"
@@ -243,7 +243,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (severity) (inference_events_total)",
+          "expr": "sum by (severity) (anomaly_severity_distribution)",
           "legendFormat": "{{severity}}",
           "range": true,
           "refId": "A"
