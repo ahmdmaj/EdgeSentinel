@@ -176,7 +176,10 @@ function FaultLab() {
     try {
       const res = await fetch("http://localhost:8000/faults", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-edge-admin-token": "edge-admin-token-123456"
+        },
         body: JSON.stringify({
           offline: newOffline,
           latency_ms: newLatency,
