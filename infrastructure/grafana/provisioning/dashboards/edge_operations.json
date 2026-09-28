@@ -7,7 +7,7 @@
   "graphTooltip": 0,
   "id": null,
   "links": [],
-  "liveNow": false,
+  "liveNow": true,
   "panels": [
     {
       "datasource": {
@@ -234,6 +234,7 @@
       "type": "piechart"
     }
   ],
+  "refresh": "1s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": [],

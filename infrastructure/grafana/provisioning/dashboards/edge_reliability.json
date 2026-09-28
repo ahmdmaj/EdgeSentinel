@@ -253,7 +253,7 @@
       "type": "piechart"
     }
   ],
-  "refresh": "5s",
+  "refresh": "1s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": [],
