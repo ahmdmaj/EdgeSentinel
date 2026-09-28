@@ -41,10 +41,11 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string) => void }) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? "Invalid credentials");
+        throw new Error(body?.error?.message ?? "Invalid credentials");
       }
 
-      const { token } = await res.json();
+      const responseData = await res.json();
+      const token = responseData.data?.token || responseData.token;
       onSuccess(token);
     } catch (err: any) {
       setError(err.message);
