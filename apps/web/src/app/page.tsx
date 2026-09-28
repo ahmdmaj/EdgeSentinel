@@ -36,7 +36,7 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string) => void }) {
       const res = await fetch("http://localhost:3000/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email: username, password }),
       });
 
       if (!res.ok) {
