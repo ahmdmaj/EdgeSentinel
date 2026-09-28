@@ -64,6 +64,17 @@ pids
 .env.test.local
 .env.production.local
 .env.*
+!.env.example
+!.env.production.example
+
+# Backups
+backups/
+
+# Project Notes (Hidden from repository, kept locally)
+EdgeSentinel.docx
+EdgeSentinel.md
+"EdgeSentinel_part 1.pdf"
+I.docx
 
 # OS
 .DS_Store
