@@ -83,16 +83,15 @@ class SyncWorker:
 
         while self._is_running and not self._stop_event.is_set():
             try:
+                # Update outbox pending count gauge
+                stats = self.repo.get_stats()
+                OUTBOX_PENDING_EVENTS.set(stats.get("PENDING", 0))
+
                 # 1. Check simulated offline fault injection if configured
                 if self.is_offline_func and self.is_offline_func():
                     logger.debug("SyncWorker: Simulated offline fault active. Pausing sync.")
                     await asyncio.sleep(self.idle_poll_interval)
                     continue
-
-                # 2. Fetch pending batch from local outbox (FIFO: ORDER BY id ASC)
-                # Update outbox pending count gauge
-                stats = self.repo.get_stats()
-                OUTBOX_PENDING_EVENTS.set(stats.get("PENDING", 0))
 
                 batch = self.repo.fetch_pending_batch(limit=self.batch_size)
                 if not batch:
