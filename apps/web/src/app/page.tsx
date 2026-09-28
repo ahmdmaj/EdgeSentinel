@@ -423,8 +423,26 @@ export default function Dashboard() {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error("Failed to fetch");
-        const data = await res.json();
-        setEvents(data);
+        const json = await res.json();
+        const mappedEvents = (json.data || []).map((row: any) => {
+          const anomaly = row.anomaly_events?.[0] || {};
+          return {
+            eventId: row.event_id || row.eventId,
+            deviceId: row.device_id || row.deviceId,
+            temperature: row.temperature,
+            humidity: row.humidity,
+            vibration: row.vibration,
+            pressure: row.pressure,
+            machineState: row.machine_state || row.machineState,
+            timestamp: new Date(row.timestamp).getTime(),
+            anomalyScore: anomaly.score ?? row.anomalyScore ?? 0,
+            severity: anomaly.severity ?? row.severity ?? "NORMAL",
+            processingDecision: anomaly.decision ?? row.processingDecision ?? "UNKNOWN",
+            edgeCpu: row.edgeCpu ?? 0,
+            networkLatency: row.networkLatency ?? 0,
+          };
+        });
+        setEvents(mappedEvents);
         setError(null);
       } catch (err: any) {
         setError(err.message);
